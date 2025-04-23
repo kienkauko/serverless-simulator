@@ -172,27 +172,6 @@ class ModelComparison:
         random.seed(RANDOM_SEED)
         env = simpy.Environment()
         
-        # For tracking waiting requests over time
-        waiting_data = []
-        last_time = 0
-        
-        # Custom monitor process to sample waiting requests
-        def monitor_waiting_requests(env):
-            nonlocal last_time
-            while True:
-                current_waiting = request_stats['generated'] - request_stats['processed'] - (
-                    request_stats['blocked_no_server_capacity'] + 
-                    request_stats['blocked_spawn_failed']
-                )
-                
-                # Record the current state with time duration since last sample
-                time_delta = env.now - last_time
-                if last_time > 0:  # Skip the first entry
-                    waiting_data.append((current_waiting, time_delta))
-                
-                last_time = env.now
-                yield env.timeout(1.0)  # Sample every time unit
-        
         # Set up topology (simplified version without topology)
         use_topology = False
         topology = None
@@ -203,14 +182,14 @@ class ModelComparison:
         system = System(env, REQUEST_ARRIVAL_RATE, REQUEST_SERVICE_RATE, CONTAINER_SPAWN_TIME,
                        CONTAINER_IDLE_TIMEOUT, topology, cluster, use_topology=use_topology)
         
-        # Start the simulation and monitoring
+        # Start the simulation
         env.process(system.request_generator())
-        env.process(monitor_waiting_requests(env))
         env.run(until=SIM_TIME)
         
-        # Calculate time-weighted average of waiting requests
-        total_weight = sum(weight for _, weight in waiting_data)
-        avg_waiting_requests = sum(value * weight for value, weight in waiting_data) / total_weight if total_weight > 0 else 0
+        # Use the system's built-in waiting requests tracking
+        # Make sure system updates its statistics one final time
+        system.update_waiting_stats()
+        avg_waiting_requests = system.total_waiting_area / env.now
         
         # Calculate other metrics
         total_blocked = request_stats['blocked_no_server_capacity'] + request_stats['blocked_spawn_failed']
@@ -219,12 +198,12 @@ class ModelComparison:
         # Calculate waiting time from latency statistics
         avg_waiting_time = 0
         if latency_stats['count'] > 0:
-            avg_waiting_time = latency_stats['spawning_time'] / latency_stats['count']
+            avg_waiting_time = latency_stats['waiting_time'] / latency_stats['count']
         
         # Construct metrics object
         metrics = {
             'blocking_ratios': total_blocked / request_stats['generated'] if request_stats['generated'] > 0 else 0,
-            'waiting_requests': avg_waiting_requests,  # Use the time-weighted average
+            'waiting_requests': avg_waiting_requests,  # Use the system's built-in tracking
             'processing_requests': request_stats['processed'] / SIM_TIME,
             'effective_arrival_rates': effective_arrival_rate,
             'waiting_times': avg_waiting_time

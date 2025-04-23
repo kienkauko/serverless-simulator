@@ -180,7 +180,7 @@ def my_draw_networkx_edge_labels(
 
     return text_items
 
-def draw_graph_new (G, node_size=1500, rad=-0.2, scale_x=1.0, scale_y=1.0, k_offset_x=0.2, k_offset_y=0.2):
+def draw_graph_new (G, node_size=1500, rad=-0.2, scale_x=1.0, scale_y=1.0, k_offset_x=0.5, k_offset_y=0.5):
     """
     Draws the state transition diagram described by the NetworkX graph G.
     States are expected to be tuples (i, j, k) where i, j, k >= 0.

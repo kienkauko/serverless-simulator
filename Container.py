@@ -21,6 +21,7 @@ class Container:
         self.current_request = None
         self.idle_since = -1
         self.idle_timeout_process = None # SimPy process for idle timeout
+        self.assignment_process = None # Track the current assignment process
 
     def __str__(self):
         state = f"Serving {self.current_request.id}" if self.current_request else f"Idle since {self.idle_since:.2f}"
@@ -28,67 +29,76 @@ class Container:
 
     def assign_request(self, request):
         """Assigns a request to this container. Returns a generator for SimPy process."""
-        print(f"{self.env.now:.2f} - Inside assign_request for {self} and {request}")
+        # print(f"{self.env.now:.2f} - Inside assign_request for {self} and {request}")
         
         if self.current_request:
             print(f"FATAL ERROR: {self.env.now:.2f} - {self} trying to assign {request} while already serving {self.current_request}")
             exit(1) # Should not happen with correct logic
 
-        # Add a small timeout to make this a generator function
-        assign_time = random.expovariate(CONTAINER_ASSIGN_RATE)
-        yield self.env.timeout(assign_time)
-        
-        # Modify resources in the container
-        delta_cpu = request.cpu_demand - self.cpu_alloc
-        delta_ram = request.ram_demand - self.ram_alloc
-        print(f"{self.env.now:.2f} - {self} request asks for more resources (+CPU:{delta_cpu:.1f}, +RAM:{delta_ram:.1f})")
-        
-        # Use the server's resource lock to prevent race conditions - request the lock
-        lock_request = self.server.resource_lock.request()
-        yield lock_request
-        
         try:
-            # Verify the server has enough resources before proceeding
-            print(f"{self.env.now:.2f} - current server resources: {self.server}")
+            # Add a small timeout to make this a generator function
+            assign_time = random.expovariate(CONTAINER_ASSIGN_RATE)
+            yield self.env.timeout(assign_time)
             
-            # Attempt to allocate the new resources
-            if not self.server.allocate_resources(delta_cpu, delta_ram):
-                print(f"{self.env.now:.2f} - ERROR: Insufficient resources on {self.server} for {request}")
-                # Release the lock before returning
+            if self.state == "Dead":
+                print(f"{self.env.now:.2f} - ERROR: {self} is dead, cannot assign request {request}")
+                return False # Should not happen with correct logic
+            # Modify resources in the container
+            delta_cpu = request.cpu_demand - self.cpu_alloc
+            delta_ram = request.ram_demand - self.ram_alloc
+            print(f"{self.env.now:.2f} - {self} request asks for more resources (+CPU:{delta_cpu:.1f}, +RAM:{delta_ram:.1f})")
+            
+            # Use the server's resource lock to prevent race conditions - request the lock
+            lock_request = self.server.resource_lock.request()
+            yield lock_request
+            
+            try:
+                # Verify the server has enough resources before proceeding
+                # print(f"{self.env.now:.2f} - current server resources: {self.server}")
+                
+                # Attempt to allocate the new resources
+                if not self.server.allocate_resources(delta_cpu, delta_ram):
+                    print(f"{self.env.now:.2f} - ERROR: Insufficient resources on {self.server} for {request}")
+                    # Release the lock before returning
+                    self.server.resource_lock.release(lock_request)
+                    return False
+                
+                print(f"{self.env.now:.2f} - {self} allocated resources (CPU:{delta_cpu:.1f}, RAM:{delta_ram:.1f}) for {request} on {self.server}")
+                
+                # Release the lock after successful allocation
+                self.server.resource_lock.release(lock_request)
+                
+                # This container is free, no request is assigned, so we assign request here
+                self.current_request = request
+                    
+                # Update the container's allocated resources
+                self.cpu_alloc = request.cpu_demand
+                self.ram_alloc = request.ram_demand
+                
+                # Update the container's state
+                self.state = "Active"
+                
+                # Update the request's service start time
+                request.start_service_time = self.env.now
+                self.idle_since = -1 # No longer idle
+                
+                # If this container was idle, cancel its removal timeout
+                if self.idle_timeout_process and not self.idle_timeout_process.triggered:
+                    print(f"{self.env.now:.2f} - Cancelling idle timeout for reused {self}")
+                    self.idle_timeout_process.interrupt()
+                    self.idle_timeout_process = None # Clear the process handle
+                    
+                return True
+            
+            except Exception as e:
+                # Make sure we release the lock even if there's an error
+                print(f"{self.env.now:.2f} - ERROR in assign_request: {e}")
                 self.server.resource_lock.release(lock_request)
                 return False
-            
-            print(f"{self.env.now:.2f} - {self} allocated resources (CPU:{delta_cpu:.1f}, RAM:{delta_ram:.1f}) for {request} on {self.server}")
-            
-            # Release the lock after successful allocation
-            self.server.resource_lock.release(lock_request)
-            
-            # This container is free, no request is assigned, so we assign request here
-            self.current_request = request
                 
-            # Update the container's allocated resources
-            self.cpu_alloc = request.cpu_demand
-            self.ram_alloc = request.ram_demand
-            
-            # Update the container's state
-            self.state = "Active"
-            
-            # Update the request's service start time
-            request.start_service_time = self.env.now
-            self.idle_since = -1 # No longer idle
-            
-            # If this container was idle, cancel its removal timeout
-            if self.idle_timeout_process and not self.idle_timeout_process.triggered:
-                print(f"{self.env.now:.2f} - Cancelling idle timeout for reused {self}")
-                self.idle_timeout_process.interrupt()
-                self.idle_timeout_process = None # Clear the process handle
-                
-            return True
-        
-        except Exception as e:
-            # Make sure we release the lock even if there's an error
-            print(f"{self.env.now:.2f} - ERROR in assign_request: {e}")
-            self.server.resource_lock.release(lock_request)
+        except simpy.Interrupt:
+            # This will be triggered if the idle_timeout_process interrupts this process
+            print(f"{self.env.now:.2f} - {self} assignment process for {request} was interrupted by timeout")
             return False
 
     def release_request(self):
@@ -123,7 +133,7 @@ class Container:
         finished_request = self.current_request
         finished_request.end_service_time = self.env.now
         print(f"{self.env.now:.2f} - {finished_request} finished service in {self}. Duration: {finished_request.end_service_time - finished_request.start_service_time:.2f}")
-        print(f"{self.env.now:.2f} - {finished_request} releasing resources (CPU:{delta_cpu:.1f}, RAM:{delta_ram:.1f}) from {self.server}")
+        print(f"{self.env.now:.2f} - {finished_request} releasing request")
         self.current_request = None
         self.idle_since = self.env.now
         # Put the container into the idle pool
@@ -133,7 +143,7 @@ class Container:
 
     def release_resources(self):
         """Returns allocated CPU and RAM resources back to the server."""
-        print(f"{self.env.now:.2f} - {self} releasing resources (CPU:{self.cpu_alloc:.1f}, RAM:{self.ram_alloc:.1f}) from {self.server}")
+        print(f"{self.env.now:.2f} - {self} idle timeout expired, removing container")
         # Use try-except blocks for robustness
         self.state = "Dead"
         try:

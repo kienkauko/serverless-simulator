@@ -13,6 +13,7 @@ class Request:
         # New: initialize spawn time and propagation delay
         self.spawn_time = 0.0
         self.prop_delay = 0.0
+        self.wait_time = 0.0   # Time waiting for container + assignment time
 
     def __str__(self):
         return f"Req_{self.id} from {self.origin_node}"

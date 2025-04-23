@@ -67,7 +67,6 @@ print(f"{'Container Assign Rate':<30}: {CONTAINER_ASSIGN_RATE:.4f}")
 
 print("\n--- Simulation Statistics ---")
 
-
 for key, value in request_stats.items():
     print(f"{key.replace('_', ' ').capitalize()}: {value}")
 
@@ -90,13 +89,30 @@ if request_stats['container_spawns_initiated'] > 0:
 if latency_stats['count'] > 0:
     avg_total = latency_stats['total_latency'] / latency_stats['count']
     avg_prop = latency_stats['propagation_delay'] / latency_stats['count']
-    avg_spawn = latency_stats['spawning_time'] / latency_stats['count']
-    avg_proc  = latency_stats['processing_time'] / latency_stats['count']
+    # avg_spawn = latency_stats['spawning_time'] / latency_stats['count']
+    avg_proc = latency_stats['processing_time'] / latency_stats['count']
+    avg_wait = latency_stats['waiting_time'] / latency_stats['count']
+    # avg_container_wait = latency_stats['container_wait_time'] / latency_stats['count']
+    # avg_assignment = latency_stats['assignment_time'] / latency_stats['count']
+    
     print("\n--- Average Latencies ---")
     print(f"{'Average Total Latency':<30}: {avg_total:.2f}")
     print(f"{'Average Propagation Delay':<30}: {avg_prop:.2f}")
-    print(f"{'Average Spawn Time':<30}: {avg_spawn:.2f}")
+    # print(f"{'Average Spawn Time':<30}: {avg_spawn:.2f}")
+    print(f"{'Average Wait Time':<30}: {avg_wait:.2f}")
+    # print(f"{' - Container Wait Time':<30}: {avg_container_wait:.2f}")
+    # print(f"{' - Assignment Time':<30}: {avg_assignment:.2f}")
     print(f"{'Average Processing Time':<30}: {avg_proc:.2f}")
+
+print("\n--- Request Waiting Statistics ---")
+avg_waiting_requests = system.total_waiting_area / env.now
+print(f"{'Average waiting requests':<30}: {avg_waiting_requests:.4f}")
+
+# Verify using Little's Law
+if latency_stats['count'] > 0:
+    littles_law_estimate = REQUEST_ARRIVAL_RATE * (1 - block_perc/100)*(latency_stats['waiting_time'] / latency_stats['count'])
+    print(f"{'Littles Law estimate':<30}: {littles_law_estimate:.4f}")
+    print(f"{'Difference':<30}: {(avg_waiting_requests - littles_law_estimate):.4f}")
 
 print("\n--- Final Cluster Servers ---")
 for server in cluster.servers:

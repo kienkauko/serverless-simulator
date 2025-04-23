@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt  # For plotting
 import numpy as np
 from scipy import linalg
 # from .graph import draw_graph, draw_graph_new
-# from graph import draw_graph, draw_graph_new
+from graph import draw_graph, draw_graph_new
 
 
 class MarkovModel():
@@ -122,8 +122,8 @@ class MarkovModel():
                 waiting = add_state(visited, waiting, next_alpha_state)
             if next_beta_state:
                 coe = min(current_state[0], current_state[1])
-                string_beta = f"{coe}$\\beta$"
-                add_transition(current_state, next_beta_state, rate=coe*self._beta, string=string_beta, color=color_beta)
+                string_beta = f"$\\beta$"
+                add_transition(current_state, next_beta_state, rate=self._beta, string=string_beta, color=color_beta)
                 waiting = add_state(visited, waiting, next_beta_state)        
             if next_theta_state:
                 string_theta = f"{current_state[1]}$\\theta$"
@@ -234,7 +234,7 @@ class MarkovModel():
         for s in self._n2i:
             total += self._state_probabilities[s]
             print("REQUEST STATE", s)
-            print("REQUEST STATE PROB", self._state_probabilities[s])
+            # print("REQUEST STATE PROB", self._state_probabilities[s])
         print(f"Total probability across ALL states: {total}")
         return total
 
@@ -430,7 +430,7 @@ class MarkovModel():
         processing_requests = self._compute_processing_requests()
         effective_arrival_rate = self._compute_effective_arrival_rate(block_ratio)
         waiting_time = self._compute_waiting_time(waiting_requests, effective_arrival_rate)
-        self.verify_total_probability()
+        # self.verify_total_probability()
         # latency = waiting_time + 
 
         return {
@@ -456,14 +456,14 @@ class MarkovModel():
     
 if __name__=="__main__":
     config = {
-        "lam": 5,
+        "lam": 10,
         "mu": 2,
         "alpha": 1/5,
         "beta": 1000,
         "theta": 1/2,
         # "segments_per_video": 3,
         # "preload_segments_per_video": 1,
-        "max_queue": 4, # queue
+        "max_queue": 2, # queue
         "serving_time": "exponential",
         "arrivals": "exponential",
         # "lam_factor": 1,

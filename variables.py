@@ -1,7 +1,7 @@
 import random
 # --- Configuration ---
 RANDOM_SEED = 42
-SIM_TIME = 1000  # Simulation time units (e.g., seconds)
+SIM_TIME = 500  # Simulation time units (e.g., seconds)
 
 # Topology configuration
 USE_TOPOLOGY = False  # New flag to enable/disable topology routing
@@ -13,7 +13,7 @@ SERVER_RAM_CAPACITY = 100.0 # %
 
 # Request Parameters
 REQUEST_ARRIVAL_RATE = 10  # Average requests per time unit (lambda for M)
-REQUEST_SERVICE_RATE = 2  # Average service completions per time unit (mu for M)
+REQUEST_SERVICE_RATE = 1  # Average service completions per time unit (mu for M)
 
 # Request resource demands (example: uniform distribution)
 MIN_WARM_CPU = 0.5
@@ -31,8 +31,8 @@ MAX_REQ_RAM = 49.0
 BANDWIDTH_DEMAND = 10.0
 
 # Container Parameters
-CONTAINER_SPAWN_TIME = 5.0   # Time units to spawn a container
-CONTAINER_IDLE_TIMEOUT = 2.0 # Time units an idle container waits before removal
+CONTAINER_SPAWN_TIME = 5   # Time units to spawn a container
+CONTAINER_IDLE_TIMEOUT = 2 # Time units an idle container waits before removal
 CONTAINER_ASSIGN_RATE = 1000.0 # Average rate for request assignment (very fast)
 
 # Statistics
@@ -56,6 +56,9 @@ latency_stats = {
     'propagation_delay': 0.0,
     'spawning_time': 0.0,
     'processing_time': 0.0,
+    'waiting_time': 0.0,      # Total waiting time (container wait + assignment)
+    'container_wait_time': 0.0, # Time waiting for an idle container
+    'assignment_time': 0.0,   # Time for the assignment process
     'count': 0
 }
 

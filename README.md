@@ -1,3 +1,26 @@
+# Serverless Simulator
+
+A simulator for modeling and analyzing serverless computing environments.
+
+## How to Run
+
+### 1. Standalone Mode
+
+#### Markov Model
+- Run `/Markov/model_3D.py` to execute the Markov model
+- The graph illustration of the Markov state machine can be enabled by uncommenting the `draw_graph_new` function in the main section
+- Example of graph output: `/Markov/graph_example.png`
+
+#### Simulator
+- Run `main.py` to execute the simulator
+- When running in standalone mode, the simulator will take input parameters from `variables.py`
+
+### 2. Comparison Mode
+- Run `model_comparison.py` to execute both the Markov model and simulator with the same input parameters
+- Results are compared against each other and stored in the `/comparison_results` folder
+- Input metrics for this mode can be configured in the main section of `model_comparison.py`
+- Note that `variables.py` is not used as input for the simulator in this mode
+
 # Detailed Simulation Report
 
 - **Report Generated:** 10:43AM on 16/04/2025
