@@ -472,5 +472,5 @@ if __name__=="__main__":
     }
     m = MarkovModel(config, verbose=False)
     G = m._G
-    draw_graph_new(G, node_size=1000)
+    # draw_graph_new(G, node_size=1000)
     print(m.get_metrics())

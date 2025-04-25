@@ -1,7 +1,7 @@
 # Detailed Simulation Report
 
 - **Report Generated:** 10:43AM on 16/04/2025
-- **Updated:** 21/04/2025
+- **Updated:** 25/04/2025
 
 ## Simulator Functions & Mechanisms
 
@@ -17,10 +17,20 @@
   - Total latency is computed as:  
     Total Latency = Propagation Delay + Container Spawn Time + Service Processing Time.
 
+- **Load Balancer and Scheduler:**
+  - The system has been refactored to include separate Load Balancer and Scheduler components:
+    - **Load Balancer (LB):** Receives incoming requests and determines which container instances should handle them.
+      - Currently implements a random selection strategy for idle containers.
+      - Functions as a local LB, limited to managing instances within a single cluster.
+    - **Scheduler:** Responsible for spawning new containers when needed.
+      - Implements two strategies: FirstFit and BestFit for container placement.
+      - Currently operates within a single cluster scope.
+
 - **Container Assignment Mechanism:**
-  - On request arrival, the simulator first checks for any idle container:
-    - If an idle container is found, it is immediately assigned to handle the request.
-    - Otherwise, a new container is spawned on a server with sufficient capacity.
+  - On request arrival, the request is directed to the Load Balancer:
+    - The LB checks for available idle containers using its selection strategy.
+    - If an idle container is found, the request is immediately forwarded to it.
+    - If no suitable container is available, the LB calls the Scheduler to spawn a new container.
   - Idle containers are monitored with a timeout; if reused before expiration, the idle timeout is cancelled.
 
 - **Resource Consumption at Each State:**
@@ -38,6 +48,27 @@
 - **Additional Simulator Notes:**
   - Simulation statistics aggregate metrics such as processed requests, resource spawning attempts, blocking reasons, and latency sums.
   - Detailed logging is implemented to track each step in the lifecycle of requests and containers.
+
+## Multi-Application Support
+
+- **Multiple Application Types:**
+  - The simulator now supports simultaneous processing of multiple application types.
+  - Each app type can have different resource requirements and processing characteristics.
+  - Performance metrics are tracked separately for each application type.
+
+- **Current Limitations:**
+  - Container idle timeout is currently fixed across all applications.
+  - Future implementations will support app-specific timeout configurations.
+
+## Future Development (TODOs)
+
+- **Cluster Selection Strategies:**
+  - Expand Load Balancer strategies to support selection between multiple clusters.
+  - Implement multi-cluster scheduling strategies in the Scheduler component.
+
+- **App-Specific Configurations:**
+  - Implement app-specific timeout settings.
+  - Develop scheduler strategies that consider application-specific requirements.
 
 ## Markov Model Implementation
 
