@@ -19,8 +19,10 @@ class Request:
         self.assigned_cluster = None  # Track which cluster the request is assigned to
         self.waiting_time = 0.0  # Track the waiting time for this request
         self.waiting_start_time = -1  # Mark when waiting starts
+        self.state = "Pending"  # Track request state: "Pending", "Running", or "Finished"
 
     def __str__(self):
         app_info = f" [App: {self.app_id}]" if self.app_id else ""
         cluster_info = f" [Cluster: {self.assigned_cluster}]" if self.assigned_cluster else ""
-        return f"Req_{self.id} from {self.origin_node}{app_info}{cluster_info}"
+        state_info = f" [State: {self.state}]"
+        return f"Req_{self.id}{state_info} from {self.origin_node}{app_info}{cluster_info}"

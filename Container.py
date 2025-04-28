@@ -183,6 +183,9 @@ class Container:
             exit(1)  # Exit if we can't scale the container
 
         self.state = "Active"
+        # Update request state to "Running" when container is active
+        request.state = "Running"
+        print(f"{self.env.now:.2f} - {request} state changed to Running")
 
         # Determine service rate based on app type
         service_rate = APPLICATIONS[request.app_id]["service_rate"]
@@ -218,6 +221,10 @@ class Container:
         print(f"{self.env.now:.2f} - {request} latencies recorded: Total {total_latency:.2f}, "
               f"Propagation {request.prop_delay:.2f}, Spawn {request.spawn_time:.2f}, "
               f"Processing {processing_time:.2f}, Waiting {request.waiting_time:.2f}")
+
+        # Update request state to "Finished" before releasing it
+        request.state = "Finished"
+        print(f"{self.env.now:.2f} - {request} state changed to Finished")
 
         # Release the request and mark the container as idle
         yield self.env.process(self.release_request())
