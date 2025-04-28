@@ -13,8 +13,14 @@ class Request:
         # New: initialize spawn time and propagation delay
         self.spawn_time = 0.0
         self.prop_delay = 0.0
+        # Store potential propagation delays for each cluster
+        self.potential_prop_delays = {}
         self.app_id = app_id  # New: application ID this request belongs to
+        self.assigned_cluster = None  # Track which cluster the request is assigned to
+        self.waiting_time = 0.0  # Track the waiting time for this request
+        self.waiting_start_time = -1  # Mark when waiting starts
 
     def __str__(self):
         app_info = f" [App: {self.app_id}]" if self.app_id else ""
-        return f"Req_{self.id} from {self.origin_node}{app_info}"
+        cluster_info = f" [Cluster: {self.assigned_cluster}]" if self.assigned_cluster else ""
+        return f"Req_{self.id} from {self.origin_node}{app_info}{cluster_info}"

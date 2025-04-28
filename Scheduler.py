@@ -48,31 +48,32 @@ class Scheduler(abc.ABC):
         """
         pass
     
-    def spawn_container_for_request(self, request, system, path=None):
+    def spawn_container_for_request(self, request, system, cluster_name):
         """
         Attempt to spawn a new container for a request when no idle containers are available.
         
         Args:
             request: The request that needs a container
             system: Reference to the system to initiate container spawning
+            cluster_name: Name of the cluster where the container should be spawned
             path: Optional network path for topology-aware scheduling
             
         Returns:
             Server instance or None if no suitable server was found
         """
         # No idle container; spawn a new one using a server from the cluster.
-        print(f"{self.env.now:.2f} - No idle container found for {request}. Attempting to spawn.")
+        print(f"{self.env.now:.2f} - No idle container found for {request} in {cluster_name} cluster. Attempting to spawn.")
         
         # Use the scheduler to find a server
         server = self.find_server_for_spawn(request)
         
         if server:
-            print(f"{self.env.now:.2f} - Found potential {server} for spawning container for {request}")
+            print(f"{self.env.now:.2f} - Found potential {server} in {cluster_name} cluster for spawning container for {request}")
             request_stats['container_spawns_initiated'] += 1
             app_stats[request.app_id]['container_spawns_initiated'] += 1
             
-            # Start the spawn process (now using the server's method)
-            self.env.process(server.spawn_container_process(system, request, path))
+            # Start the spawn process (now passing cluster_name)
+            self.env.process(server.spawn_container_process(system, request, cluster_name))
             return True
         else:
             return False

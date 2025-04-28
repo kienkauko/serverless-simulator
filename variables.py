@@ -1,7 +1,7 @@
 import random
 # --- Configuration ---
 RANDOM_SEED = 42
-SIM_TIME = 10  # Simulation time units (e.g., seconds)
+SIM_TIME = 500  # Simulation time units (e.g., seconds)
 
 
 # Container Parameters
@@ -10,17 +10,36 @@ CONTAINER_ASSIGN_RATE = 1000.0 # Average rate for request assignment (very fast)
 # Topology configuration
 USE_TOPOLOGY = False  # New flag to enable/disable topology routing
 
+# --- Multi-Cluster Configuration ---
+# Define the parameters for each cluster
+CLUSTER_CONFIG = {
+    "edge": {
+        "node": "nodeA",
+        "num_servers": 2,
+        "server_cpu": 100.0,
+        "server_ram": 100.0,
+        "spawn_time_factor": 1.0  # Edge spawn time multiplier (slower)
+    },
+    # "cloud": {
+    #     "node": "nodeB",
+    #     "num_servers": 4,
+    #     "server_cpu": 200.0,
+    #     "server_ram": 200.0,
+    #     "spawn_time_factor": 0.7  # Cloud spawn time multiplier (faster)
+    # }
+}
+
 # System Parameters
-NUM_SERVERS = 2
-SERVER_CPU_CAPACITY = 100.0 # %
-SERVER_RAM_CAPACITY = 100.0 # %
+# NUM_SERVERS = 2
+# SERVER_CPU_CAPACITY = 100.0 # %
+# SERVER_RAM_CAPACITY = 100.0 # %
 
 # Application definitions for heterogeneous workloads
 APPLICATIONS = {
     "app1": {
         "arrival_rate": 5.0,  # Requests per time unit
         "service_rate": 2.0,  # Service completions per time unit
-        "spawn_time": 5.0,    # Time units to spawn a container
+        "base_spawn_time": 5.0,  # Base time units to spawn a container (modified by cluster factor)
         "min_warm_cpu": 0.5,  # Minimum CPU for warm container
         "max_warm_cpu": 0.5,  # Maximum CPU for warm container
         "min_warm_ram": 5.0,  # Minimum RAM for warm container
@@ -31,24 +50,24 @@ APPLICATIONS = {
         "max_req_ram": 20.0,  # Maximum RAM demand for request
         "bandwidth_demand": 5.0,  # Bandwidth demand for this application
     },
-    # "app2": {
-    #     "arrival_rate": 3.0,
-    #     "service_rate": 1.5,
-    #     "spawn_time": 7.0,
-    #     "min_warm_cpu": 1.0,
-    #     "max_warm_cpu": 1.0,
-    #     "min_warm_ram": 8.0,
-    #     "max_warm_ram": 8.0,
-    #     "min_req_cpu": 40.0,
-    #     "max_req_cpu": 40.0,
-    #     "min_req_ram": 40.0,
-    #     "max_req_ram": 40.0,
-    #     "bandwidth_demand": 10.0,  # Bandwidth demand for this application
-    # },
+    "app2": {
+        "arrival_rate": 3.0,
+        "service_rate": 1.5,
+        "base_spawn_time": 7.0,
+        "min_warm_cpu": 1.0,
+        "max_warm_cpu": 1.0,
+        "min_warm_ram": 8.0,
+        "max_warm_ram": 8.0,
+        "min_req_cpu": 40.0,
+        "max_req_cpu": 40.0,
+        "min_req_ram": 40.0,
+        "max_req_ram": 40.0,
+        "bandwidth_demand": 10.0,  # Bandwidth demand for this application
+    },
     # "app3": {
     #     "arrival_rate": 5.0,
     #     "service_rate": 1.0,
-    #     "spawn_time": 10.0,
+    #     "base_spawn_time": 10.0,
     #     "min_warm_cpu": 2.0,
     #     "max_warm_cpu": 5.0,
     #     "min_warm_ram": 10.0,
@@ -99,6 +118,7 @@ latency_stats = {
     'propagation_delay': 0.0,
     'spawning_time': 0.0,
     'processing_time': 0.0,
+    'waiting_time': 0.0,  # Track total waiting time
     'count': 0
 }
 
@@ -110,6 +130,7 @@ for app_id in APPLICATIONS:
         'propagation_delay': 0.0,
         'spawning_time': 0.0,
         'processing_time': 0.0,
+        'waiting_time': 0.0,  # Track app-specific waiting time
         'count': 0
     }
 

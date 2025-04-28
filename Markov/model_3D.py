@@ -123,6 +123,7 @@ class MarkovModel():
             if next_beta_state:
                 coe = min(current_state[0], current_state[1])
                 string_beta = f"{coe}$\\beta$"
+                add_transition(current_state, next_beta_state, rate=self._beta, string=string_beta, color=color_beta)
                 add_transition(current_state, next_beta_state, rate=coe*self._beta, string=string_beta, color=color_beta)
                 waiting = add_state(visited, waiting, next_beta_state)        
             if next_theta_state:

@@ -9,7 +9,7 @@ class Container:
     # Using itertools for unique container IDs across the system
     id_counter = itertools.count()
 
-    def __init__(self, env, system, server, cpu_alloc, ram_alloc, cpu_reserve, ram_reserve, app_id=None):
+    def __init__(self, env, system, server, cpu_alloc, ram_alloc, cpu_reserve, ram_reserve, app_id=None, cluster_name=None):
         self.env = env
         self.state = "Idle" # Initial state
         self.id = next(Container.id_counter)
@@ -22,12 +22,14 @@ class Container:
         self.current_request = None
         self.idle_since = -1
         self.idle_timeout_process = None # SimPy process for idle timeout
-        self.app_id = app_id # New: application ID this container belongs to
+        self.app_id = app_id # Application ID this container belongs to
+        self.cluster_name = cluster_name # Cluster this container belongs to
 
     def __str__(self):
         state = f"Serving {self.current_request.id}" if self.current_request else f"Idle since {self.idle_since:.2f}"
         app_info = f" [App: {self.app_id}]" if self.app_id else ""
-        return f"Cont_{self.id}(on Srv_{self.server.id}, State: {state}){app_info}"
+        cluster_info = f" [Cluster: {self.cluster_name}]" if self.cluster_name else ""
+        return f"Cont_{self.id}(on Srv_{self.server.id}, State: {state}){app_info}{cluster_info}"
 
     def scale_for_request(self):
         """Scales container resources for the current request."""
@@ -108,6 +110,9 @@ class Container:
             if(self.server.cpu_real > self.server.cpu_capacity or self.server.ram_real > self.server.ram_capacity):
                 print(f"FATAL ERROR: {self.env.now:.2f} - {self} released more resources than server capacity (CPU:{self.server.cpu_real:.1f}/{self.server.cpu_capacity:.1f}, RAM:{self.server.ram_real:.1f}/{self.server.ram_capacity:.1f})")
                 exit(1)
+            if(self.server.cpu_reserve > self.server.cpu_capacity or self.server.ram_reserve > self.server.ram_capacity):
+                print(f"FATAL ERROR: {self.env.now:.2f} - {self} released more resources than server capacity (CPU:{self.server.cpu_real:.1f}/{self.server.cpu_capacity:.1f}, RAM:{self.server.ram_real:.1f}/{self.server.ram_capacity:.1f})")
+                exit(1)
         except Exception as e:
             print(f"FATAL ERROR: releasing resources for {self}: {e}")
             exit(1)
@@ -145,19 +150,25 @@ class Container:
         if(self.server.cpu_real > self.server.cpu_capacity or self.server.ram_real > self.server.ram_capacity):
             print(f"FATAL ERROR: {self.env.now:.2f} - {self} released more resources than server capacity (CPU:{self.server.cpu_real:.1f}/{self.server.cpu_capacity:.1f}, RAM:{self.server.ram_real:.1f}/{self.server.ram_capacity:.1f})")
             exit(1)
+        
+        if(self.server.cpu_reserve > self.server.cpu_capacity or self.server.ram_reserve > self.server.ram_capacity):
+            print(f"FATAL ERROR: {self.env.now:.2f} - {self} released more resources than server capacity (CPU:{self.server.cpu_real:.1f}/{self.server.cpu_capacity:.1f}, RAM:{self.server.ram_real:.1f}/{self.server.ram_capacity:.1f})")
+            exit(1)
+
         self.server.resource_lock.release(lock_request)
 
-        # Remove from server's list
-        if self in self.server.containers:
-            self.server.containers.remove(self)
 
     def service_lifecycle(self, path, topology, use_topology):
         """Simulates the request processing time within a container."""
-        if not self.current_request:
-            print(f"ERROR: {self.env.now:.2f} - service_lifecycle called for {self} with no request!")
-            return
-
+        # if not self.current_request:
+        #     print(f"ERROR: {self.env.now:.2f} - service_lifecycle called for {self} with no request!")
+        #     return
         request = self.current_request
+        
+        # Calculate and record the waiting time
+        if request.waiting_start_time != -1:
+            request.waiting_time = self.env.now - request.waiting_start_time
+            # print(f"{self.env.now:.2f} - {request} waited for {request.waiting_time:.2f} time units")
         
         # First, have the container scale its resources for the request
         scaling_result = yield self.env.process(self.scale_for_request())
@@ -172,14 +183,7 @@ class Container:
             exit(1)  # Exit if we can't scale the container
 
         self.state = "Active"
-        self.idle_since = -1  # No longer idle
-        
-        # If this container was idle, cancel its removal timeout
-        print(f"{self.env.now:.2f} - {self} status: {self.idle_timeout_process}.")
-        if self.idle_timeout_process and not self.idle_timeout_process.triggered:
-            print(f"{self.env.now:.2f} - Cancelling idle timeout for reused {self}")
-            self.idle_timeout_process.interrupt()
-            self.idle_timeout_process = None  # Clear the process handle
+
         # Determine service rate based on app type
         service_rate = APPLICATIONS[request.app_id]["service_rate"]
             
@@ -200,6 +204,7 @@ class Container:
         latency_stats['propagation_delay'] += request.prop_delay
         latency_stats['spawning_time'] += request.spawn_time
         latency_stats['processing_time'] += processing_time
+        latency_stats['waiting_time'] += request.waiting_time  # Add waiting time to stats
         latency_stats['count'] += 1
         
         # Update app-specific latency stats
@@ -207,10 +212,12 @@ class Container:
         app_latency_stats[request.app_id]['propagation_delay'] += request.prop_delay
         app_latency_stats[request.app_id]['spawning_time'] += request.spawn_time
         app_latency_stats[request.app_id]['processing_time'] += processing_time
+        app_latency_stats[request.app_id]['waiting_time'] += request.waiting_time  # Add app-specific waiting time
         app_latency_stats[request.app_id]['count'] += 1
             
         print(f"{self.env.now:.2f} - {request} latencies recorded: Total {total_latency:.2f}, "
-              f"Propagation {request.prop_delay:.2f}, Spawn {request.spawn_time:.2f}, Processing {processing_time:.2f}")
+              f"Propagation {request.prop_delay:.2f}, Spawn {request.spawn_time:.2f}, "
+              f"Processing {processing_time:.2f}, Waiting {request.waiting_time:.2f}")
 
         # Release the request and mark the container as idle
         yield self.env.process(self.release_request())
@@ -225,7 +232,7 @@ class Container:
         self.state = "Idle"
         self.idle_since = self.env.now
         # Put the container into the idle pool
-        self.system.add_idle_container(self)
+        self.system.add_idle_container(self, self.cluster_name)
         # Start the idle timeout process
         self.idle_timeout_process = self.env.process(self.idle_lifecycle())
 
@@ -234,7 +241,8 @@ class Container:
         print(f"{self.env.now:.2f} - {self} is now idle. Starting idle timeout.")
         try:
             # Use the scheduler to calculate the idle timeout
-            idle_timeout = self.system.scheduler.calculate_idle_timeout(self)
+            scheduler = self.system.schedulers[self.cluster_name]
+            idle_timeout = scheduler.calculate_idle_timeout(self)
             
             print(f"{self.env.now:.2f} - Generated exponential idle timeout: {idle_timeout:.2f}s for {self}")
             yield self.env.timeout(idle_timeout)
@@ -242,11 +250,16 @@ class Container:
             print(f"{self.env.now:.2f} - Idle timeout reached for {self}. Removing it.")
             request_stats['containers_removed_idle'] += 1
             app_stats[self.app_id]['containers_removed_idle'] += 1
-                
+            
+            # Remove from server's list
+            if self in self.server.containers:
+                self.server.containers.remove(self)
+            
+            self.state = "Dead"  # Mark as expired
+
             # Mark container as dead and release resources
             yield self.env.process(self.release_resources())
 
-            self.state = "Dead"  # Mark as expired
 
             # We don't need to explicitly remove from idle_containers store here,
             # as it would have been removed by 'get' if reused. If it times out,

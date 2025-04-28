@@ -1,6 +1,6 @@
 import simpy
 import random
-from variables import APPLICATIONS
+from variables import APPLICATIONS, CLUSTER_CONFIG
 from Container import Container
 
 class Server:
@@ -40,7 +40,7 @@ class Server:
             return True
         return False
 
-    def spawn_container_process(self, system, request, path):
+    def spawn_container_process(self, system, request, cluster_name):
         """Simulates the time and resource acquisition for spawning a container."""
         print(f"{self.env.now:.2f} - Attempting to acquire resources on {self} for {request}...")
 
@@ -72,26 +72,32 @@ class Server:
             # Release the lock after allocation
             self.resource_lock.release(lock_request)
 
-            # Determine spawn time based on app type
-            spawn_time_mean = APPLICATIONS[request.app_id]["spawn_time"]
+            # Determine spawn time based on app type and cluster type
+            base_spawn_time = APPLICATIONS[request.app_id]["base_spawn_time"]
+            
+            # Apply the cluster-specific spawn time factor
+            spawn_time_factor = CLUSTER_CONFIG[cluster_name]["spawn_time_factor"]
+            spawn_time_mean = base_spawn_time * spawn_time_factor
             
             # Resources acquired, now wait for spawn time, which is exponential distributed
             spawn_time_real = random.expovariate(1.0/spawn_time_mean)
-            print(f"Waiting {spawn_time_real:.2f} time units...")
+            print(f"{self.env.now:.2f} - Spawning container on {cluster_name} cluster with factor {spawn_time_factor}. Base time: {base_spawn_time:.2f}, Adjusted mean: {spawn_time_mean:.2f}")
+            print(f"{self.env.now:.2f} - Waiting {spawn_time_real:.2f} time units for container to spawn...")
             yield self.env.timeout(spawn_time_real)
 
             # Record the spawn time for latency calculation
             request.spawn_time = spawn_time_real
 
-            # Spawning complete, create the container object with app_id
+            # Spawning complete, create the container object with app_id and cluster
             container = Container(self.env, system, self, request.cpu_warm, request.ram_warm, 
-                                 request.cpu_demand, request.ram_demand, app_id=request.app_id)
+                                 request.cpu_demand, request.ram_demand, app_id=request.app_id,
+                                 cluster_name=cluster_name)
             container.state = "Idle"  # Explicitly mark as idle
             self.containers.append(container) # Track container on server
             print(f"{self.env.now:.2f} - Spawn Complete: Created {container}")
             
             # Add the newly spawned container to the idle pool immediately
-            system.add_idle_container(container)
+            system.add_idle_container(container, cluster_name)
             
             # Start its idle lifecycle - this will be interrupted when a request uses the container
             container.idle_timeout_process = self.env.process(container.idle_lifecycle())

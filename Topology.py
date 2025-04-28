@@ -32,10 +32,14 @@ class Topology:
                     valid = False
                     break
             if valid:
-                for i in range(len(path)-1):
-                    self.graph[path[i]][path[i+1]]['available_bandwidth'] -= required_bw
+                # for i in range(len(path)-1):
+                #     self.graph[path[i]][path[i+1]]['available_bandwidth'] -= required_bw
                 return path
         return None
+
+    def implement_path(self, path, bw):
+        for i in range(len(path)-1):
+            self.graph[path[i]][path[i+1]]['available_bandwidth'] -= bw
 
     def release_path(self, path, bw):
         for i in range(len(path)-1):
