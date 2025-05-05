@@ -10,7 +10,6 @@ import networkx as nx  # For the magic
 import matplotlib.pyplot as plt  # For plotting
 import numpy as np
 from scipy import linalg
-# from .graph import draw_graph, draw_graph_new
 # from graph import draw_graph_updated
 
 
@@ -458,7 +457,7 @@ if __name__=="__main__":
         "theta": 0.3,
         # "segments_per_video": 3,
         # "preload_segments_per_video": 1,
-        "max_queue": 1, # queue
+        "max_queue": 3, # queue
         "serving_time": "exponential",
         "arrivals": "exponential",
         # "lam_factor": 1,
