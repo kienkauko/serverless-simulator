@@ -1,6 +1,6 @@
-# Serverless Simulator
+# Markov Model for Serverless Deployment
 
-A simulator for modeling and analyzing serverless computing environments.
+This repo contains scripts to generate 3D Markov chain that models the operation of serverless function (with different states in its lifecycle: null, warm, active). From the model, various performance and consumption metrics can be derived. This repo also comes with a simple simulator that simulates serverless deployment in reaction to homogeneous requests coming to a cluster of homogeneous servers. The simulator is used to verify and validate the Markov model. A better simulator that captures sophisticated mapping and routing strategies is available in branch main.
 
 ## How to Run
 
