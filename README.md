@@ -7,38 +7,34 @@ A simulator for modeling and analyzing serverless computing environments.
 ### 1. Standalone Mode
 
 #### Markov Model
-- Run `/Markov/model_3D.py` to execute the Markov model
+- Run [`/Markov/model_3D.py`](/Markov/model_3D.py) to execute the Markov model
 - The graph illustration of the Markov state machine can be enabled by uncommenting the `draw_graph_new` function in the main section
-- Example of graph output: `/Markov/graph_example.png`
+- Example of graph output: [`/Markov/graph_example.png`](/Markov/graph_example.png)
 
 #### Simulator
-- Run `main.py` to execute the simulator
-- When running in standalone mode, the simulator will take input parameters from `variables.py`
+- Run [`main.py`](main.py) to execute the simulator
+- When running in standalone mode, the simulator will take input parameters from [`variables.py`](variables.py)
 
 ### 2. Comparison Mode
-- Run `model_comparison.py` to execute both the Markov model and simulator with the same input parameters
-- Results are compared against each other and stored in the `/comparison_results` folder
-- Input metrics for this mode can be configured in the main section of `model_comparison.py`
-- Note that `variables.py` is not used as input for the simulator in this mode
+- Run [`model_comparison.py`](model_comparison.py) to execute both the Markov model and simulator with the same input parameters
+- Results are compared against each other and stored in the [`/comparison_results`](/comparison_results) folder
+- Input metrics for this mode can be configured in the main section of [`model_comparison.py`](model_comparison.py)
+- Note that [`variables.py`](variables.py) is not used as input for the simulator in this mode
 
 # Detailed Simulation Report
 
 - **Report Generated:** 10:43AM on 16/04/2025
-- **Updated:** 21/04/2025
+- **Updated:** 05/05/2025
 
 ## Simulator Functions & Mechanisms
 
-- **Request Generation & Routing:**
+- **Request Generation:**
   - Requests are created randomly at nodes.
-  - Each request is routed from its origin node to the cluster using a network topology.
-  - The topology reads edge attributes (bandwidth, mean latency, jitter).
-  - **Path Latency Generation:**  
-    - For each edge, effective latency = max(0, random.gauss(mean_latency, jitter)).
-    - The round-trip propagation delay is calculated as 2 × (sum of latencies along the path).
+  - Request routing has been removed since it doesn't contribute to the model. Edge-cloud simulator has been moved to branch "main".
 
 - **Total Latency Calculation:**
-  - Total latency is computed as:  
-    Total Latency = Propagation Delay + Container Spawn Time + Service Processing Time.
+  - Total latency is now computed as:  
+    Total Latency = Request Waiting Time + Serving Time.
 
 - **Container Assignment Mechanism:**
   - On request arrival, the simulator first checks for any idle container:
@@ -65,7 +61,7 @@ A simulator for modeling and analyzing serverless computing environments.
 ## Markov Model Implementation
 
 - **3D State Representation:**
-  - The Markov folder contains a continuous-time Markov chain (CTMC) model in model_3D.py.
+  - The Markov folder contains a continuous-time Markov chain (CTMC) model in [`model_3D.py`](/Markov/model_3D.py).
   - States are represented as 3D tuples (i, j, k) where:
     - i: Number of waiting requests.
     - j: Number of available containers (idle or active).
@@ -88,7 +84,7 @@ A simulator for modeling and analyzing serverless computing environments.
 ## Model Comparison Framework
 
 - **Comparative Analysis:**
-  - The model_comparison.py file provides a framework to compare the analytical Markov model with simulation results.
+  - The [`model_comparison.py`](model_comparison.py) file provides a framework to compare the analytical Markov model with simulation results.
   - Parameters are unified between both approaches to ensure fair comparison.
   
 - **Configurable Scenarios:**
@@ -106,6 +102,6 @@ A simulator for modeling and analyzing serverless computing environments.
     - Individual metric differences: Detailed comparison of each performance metric.
 
 - **Reporting Features:**
-  - Results are saved to CSV files for further analysis.
+  - Results are saved to CSV files under folder [`/comparison_results`](/comparison_results) for further analysis.
   - Text reports summarize findings for each scenario.
   - Runtime performance tracking for both approaches.

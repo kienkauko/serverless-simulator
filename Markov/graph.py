@@ -180,7 +180,7 @@ def my_draw_networkx_edge_labels(
 
     return text_items
 
-def draw_graph_new (G, node_size=1500, rad=-0.2, scale_x=1.0, scale_y=1.0, k_offset_x=0.5, k_offset_y=0.5):
+def draw_graph_new (G, node_size=1500, rad=-0.2, scale_x=1.0, scale_y=1.0, k_offset_x=0.5, k_offset_y=1):
     """
     Draws the state transition diagram described by the NetworkX graph G.
     States are expected to be tuples (i, j, k) where i, j, k >= 0.
@@ -248,7 +248,88 @@ def draw_graph_new (G, node_size=1500, rad=-0.2, scale_x=1.0, scale_y=1.0, k_off
     plt.axis('off')
     plt.show()
 
+def draw_graph_updated(G, node_size=1500, rad=-0.2, scale_x=0.5, scale_y=1.0, k_offset_x=0.25, k_offset_y=2.0):
+    """
+    Draws the state transition diagram described by the NetworkX graph G.
+    States are expected to be tuples (i, j, k) where i, j, k >= 0.
+    - Increasing 'i' moves nodes horizontally to the right: (0,0,0) -> (1,0,0) -> (2,0,0)
+    - Decreasing 'i' while increasing 'j' moves nodes vertically down: (1,0,0) -> (0,1,0), (2,0,0) -> (1,1,0) -> (0,2,0)
+    - Decreasing 'j' while increasing 'k' moves nodes diagonally: (0,1,0) -> (0,0,1)
 
+    Args:
+        G (networkx.DiGraph): State transition graph. Nodes MUST be tuples (i, j, k).
+                              Assumes G might have attributes G.labels, G.edge_labels, G.edge_cols.
+                              If not present, defaults will be used.
+        node_size (int): Size of a node in the diagram.
+        rad (float): Curvature of the edges (for arc3 connectionstyle).
+        scale_x (float): Base spacing between nodes along the i-axis (horizontal).
+        scale_y (float): Base spacing between nodes along the j-axis (vertical).
+        k_offset_x (float): Horizontal offset added per unit increase in k.
+        k_offset_y (float): Vertical offset added per unit increase in k.
+    """
+
+    # --- 1. Calculate Node Positions ---
+    pos = {}
+    for node in G.nodes():
+        if isinstance(node, tuple) and len(node) == 3:
+            try:
+                # Ensure components are numeric and non-negative
+                i, j, k = map(float, node) # Convert to float for calculation
+                print(f"Node {node} has components: i={i}, j={j}, k={k}")
+                if not (i >= 0 and j >= 0 and k >= 0):
+                    raise ValueError("Components must be non-negative")
+            except (ValueError, TypeError):
+                print(f"Warning: Node {node} has invalid or non-numeric components. Skipping positioning.")
+                pos[node] = (0, 0) # Assign default position
+                continue
+
+            # Calculate position based on the requirements:
+            # - i increases -> horizontal movement
+            # - j increases (with i decreasing) -> vertical movement
+            # - k increases (with j decreasing) -> diagonal movement
+            
+            # Base horizontal position from i
+
+            x = scale_x * (i+j)
+            
+            # Base vertical position from j
+
+            y = -scale_y * j  # Negative to move downward
+            
+            # Apply k offset for diagonal movement
+            x += k * k_offset_x
+            y -= k * k_offset_y  # Further down and to the right
+            # if k > 0:
+            #     y -= k*2
+            pos[node] = (x, y)
+        else:
+            # Handle nodes not in the expected (i, j, k) tuple format
+            print(f"Warning: Node '{node}' is not in (i, j, k) format. Placing at (0,0).")
+            pos[node] = (0, 0)
+
+    # --- 2. Prepare for Drawing ---
+    plt.figure(figsize=(14, 7), clear=True)
+
+    # --- 3. Draw the Graph Components ---
+    # Use getattr to safely access attributes that may not exist
+    labels = getattr(G, 'labels', {})
+    edge_labels = getattr(G, 'edge_labels', {})
+    edge_cols = getattr(G, 'edge_cols', {})
+    
+    # Default color if edge_cols doesn't contain an edge
+    default_color = 'black'
+    edge_colors = [edge_cols.get(edge, default_color) for edge in G.edges]
+
+    nx.draw_networkx_nodes(G, pos, node_color='lightgray', node_shape='o', node_size=node_size)
+    nx.draw_networkx_labels(G, pos, font_size=10, font_color='black')
+    edges = nx.draw_networkx_edges(G, pos, width=1, edge_color=edge_colors,
+                                 node_size=node_size, 
+                                 arrows=True, arrowstyle='-|>',
+                                 connectionstyle=f"arc3,rad={rad}")
+            
+    my_draw_networkx_edge_labels(G, pos, ax=plt.gca(), edge_labels=edge_labels, rotate=False, rad=rad)
+    plt.axis('off')
+    plt.show()
 
 def draw_graph(G, node_size=1500, rad=-0.2):     
     """

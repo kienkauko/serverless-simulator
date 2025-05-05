@@ -1,119 +1,92 @@
 import simpy
 import random
-from System import System
+import sys
+
 from variables import *
-from Topology import Topology
-from Cluster import Cluster
+from Server import Server
+from Request import Request
+from Container import Container
+from System import System
 
-# --- Simulation Setup and Run ---
+# --- Main Simulation Entry Point ---
 
-print("--- Simulation Start ---")
-print(f"Config: Cluster with Servers, CPU={SERVER_CPU_CAPACITY}%, RAM={SERVER_RAM_CAPACITY}%")
-print(f"ArrivalRate={REQUEST_ARRIVAL_RATE}, ServiceRate={REQUEST_SERVICE_RATE}")
-print(f"SpawnTime={CONTAINER_SPAWN_TIME}, IdleTimeout={CONTAINER_IDLE_TIMEOUT}")
-print(f"Request CPU: {CPU_DEMAND}%, RAM: {RAM_DEMAND}%")
-print(f"Warm CPU: {CPU_WARM}%, RAM: {RAM_WARM}%")
-print(f"Bandwidth Demand: {BANDWIDTH_DEMAND}")
-print(f"Use Topology: {USE_TOPOLOGY}")
-print(f"SimTime={SIM_TIME}, Seed={RANDOM_SEED}")
-print("-" * 20)
-
-random.seed(RANDOM_SEED)
+# Create the simulation environment
 env = simpy.Environment()
 
-# Create topology from a file (only used if USE_TOPOLOGY is True)
-topology = None
-cluster_node = None
-if USE_TOPOLOGY:
-    topology_file = "topology.csv"
-    topology = Topology(topology_file)
-    cluster_node = list(topology.graph.nodes)[0]
-else:
-    # When not using topology, we use a default placeholder node name
-    cluster_node = "default_node"
+# Initialize statistics dictionaries from variables.py
+if 'request_stats' not in globals():
+    request_stats = {"generated": 0, "processed": 0, "container_spawns_initiated": 0, "container_spawns_succeeded": 0, "container_spawns_failed": 0, "containers_reused": 0, "containers_removed_idle": 0, "blocked_no_server_capacity": 0, "reuse_oom_failures": 0}
 
-# Create cluster
-cluster = Cluster(env, cluster_node, NUM_SERVERS, SERVER_CPU_CAPACITY, SERVER_RAM_CAPACITY)
+if 'latency_stats' not in globals():
+    latency_stats = {"total_latency": 0.0, "spawning_time": 0.0, "waiting_time": 0.0, "processing_time": 0.0, "container_wait_time": 0.0, "assignment_time": 0.0, "count": 0}
 
-# Create System with topology and cluster
-system = System(env, REQUEST_ARRIVAL_RATE, REQUEST_SERVICE_RATE, CONTAINER_SPAWN_TIME, 
-                CONTAINER_IDLE_TIMEOUT, topology, cluster, use_topology=USE_TOPOLOGY)
+# Create the System with config dictionary
+system = System(env, config, distribution=config["system"]["distribution"], verbose=config["system"]["verbose"])
 
+# Add servers directly to the system
+for i in range(config["system"]["num_servers"]):
+    server = Server(env, f"Server-{i}", config["server"]["cpu_capacity"], config["server"]["ram_capacity"])
+    system.add_server(server)
+
+# Start the request generation process
 env.process(system.request_generator())
-env.run(until=SIM_TIME)
 
-print("-" * 20)
-print(f"--- Simulation End at time {env.now:.2f} ---")
+# Run the simulation
+print(f"\nStarting simulation with parameters:")
+print(f"- Arrival Rate (λ): {config['request']['arrival_rate']} req/s")
+print(f"- Service Rate (μ): {config['request']['service_rate']} req/s")
+print(f"- Number of Servers: {config['system']['num_servers']}")
+# print(f"- CPU Demand: {CPU_DEMAND}") # Using the backward compatibility variable for display
+# print(f"- RAM Demand: {RAM_DEMAND}") # Using the backward compatibility variable for display
+print(f"- Simulation Time: {config['system']['sim_time']}s")
+print(f"- Container Spawn Time: {config['container']['spawn_time']}s")
+print(f"- Container Idle Timeout: {config['container']['idle_timeout']}s\n")
 
-# Print additional simulation parameters
-print("\n--- Simulation Parameters ---")
-print(f"{'Request Arrival Rate':<30}: {REQUEST_ARRIVAL_RATE:.4f}")
-print(f"{'Request Service Rate':<30}: {REQUEST_SERVICE_RATE:.4f}")
+env.run(until=config["system"]["sim_time"])
 
-# Calculate MAX_CONTAINER
-max_containers_cpu = NUM_SERVERS * SERVER_CPU_CAPACITY / CPU_DEMAND
-max_containers_ram = NUM_SERVERS * SERVER_RAM_CAPACITY / RAM_DEMAND
-MAX_CONTAINER = min(max_containers_cpu, max_containers_ram)
-print(f"{'Max Containers':<30}: {MAX_CONTAINER:.2f}")
-print(f"{'  - By CPU':<30}: {max_containers_cpu:.2f}")
-print(f"{'  - By RAM':<30}: {max_containers_ram:.2f}")
-
-# Calculate rates
-SPAWNING_RATE = 1/CONTAINER_SPAWN_TIME
-TIMEOUT_RATE = 1/CONTAINER_IDLE_TIMEOUT
-print(f"{'Spawning Rate':<30}: {SPAWNING_RATE:.4f}")
-print(f"{'Timeout Rate':<30}: {TIMEOUT_RATE:.4f}")
-print(f"{'Container Assign Rate':<30}: {CONTAINER_ASSIGN_RATE:.4f}")
-
+# Print final statistics
 print("\n--- Simulation Statistics ---")
+print(f"Requests Generated: {request_stats['generated']}")
+print(f"Requests Processed: {request_stats['processed']}")
+print(f"Requests Blocked (No Capacity): {request_stats['blocked_no_server_capacity']}")
 
-for key, value in request_stats.items():
-    print(f"{key.replace('_', ' ').capitalize()}: {value}")
-
-total_blocked = request_stats['blocked_no_server_capacity'] + request_stats['blocked_spawn_failed']
-if USE_TOPOLOGY:
-    total_blocked += request_stats['blocked_no_path']
-    
-total_ended = request_stats['processed'] + total_blocked
-print(f"{'Total requests ended':<30}: {total_ended}")
-print(f"{'Total requests counted':<30}: {latency_stats['count']}")
+# Calculate and print blocking probability
 if request_stats['generated'] > 0:
-    block_perc = total_blocked / request_stats['generated'] * 100
-    print(f"{'Blocking percentage':<30}: {block_perc:.2f}%")
+    blocking_probability = request_stats['blocked_no_server_capacity'] / request_stats['generated']
+    print(f"Blocking Probability: {blocking_probability:.4f} ({blocking_probability*100:.2f}%)")
 
-if request_stats['container_spawns_initiated'] > 0:
-    spawn_fail_perc = request_stats['container_spawns_failed'] / request_stats['container_spawns_initiated'] * 100
-    print(f"{'Spawn failure percentage':<30}: {spawn_fail_perc:.2f}%")
+print(f"Container Spawns Initiated: {request_stats['container_spawns_initiated']}")
+print(f"Container Spawns Succeeded: {request_stats['container_spawns_succeeded']}")
+print(f"Container Spawns Failed: {request_stats['container_spawns_failed']}")
+print(f"Containers Reused: {request_stats['containers_reused']}")
+print(f"Container OOM Reuse Failures: {request_stats['reuse_oom_failures']}")
+print(f"Containers Removed Idle: {request_stats['containers_removed_idle']}")
 
-# Print average latency metrics if available
+# Print latency statistics
 if latency_stats['count'] > 0:
     avg_total = latency_stats['total_latency'] / latency_stats['count']
-    avg_prop = latency_stats['propagation_delay'] / latency_stats['count']
-    # avg_spawn = latency_stats['spawning_time'] / latency_stats['count']
-    avg_proc = latency_stats['processing_time'] / latency_stats['count']
+    avg_spawn = latency_stats['spawning_time'] / latency_stats['count']
     avg_wait = latency_stats['waiting_time'] / latency_stats['count']
-    # avg_container_wait = latency_stats['container_wait_time'] / latency_stats['count']
-    # avg_assignment = latency_stats['assignment_time'] / latency_stats['count']
+    avg_proc = latency_stats['processing_time'] / latency_stats['count']
+    avg_container_wait = latency_stats['container_wait_time'] / latency_stats['count']
+    avg_assignment = latency_stats['assignment_time'] / latency_stats['count']
     
     print("\n--- Average Latencies ---")
-    print(f"{'Average Total Latency':<30}: {avg_total:.2f}")
-    print(f"{'Average Propagation Delay':<30}: {avg_prop:.2f}")
-    # print(f"{'Average Spawn Time':<30}: {avg_spawn:.2f}")
-    print(f"{'Average Wait Time':<30}: {avg_wait:.2f}")
-    # print(f"{' - Container Wait Time':<30}: {avg_container_wait:.2f}")
-    # print(f"{' - Assignment Time':<30}: {avg_assignment:.2f}")
-    print(f"{'Average Processing Time':<30}: {avg_proc:.2f}")
+    print(f"Total End-to-End Latency: {avg_total:.2f}s")
+    print(f"Container Spawn Time: {avg_spawn:.2f}s")
+    print(f"Total Wait Time: {avg_wait:.2f}s")
+    print(f"  - Container Wait: {avg_container_wait:.2f}s")
+    print(f"  - Assignment Time: {avg_assignment:.2f}s")
+    print(f"Processing Time: {avg_proc:.2f}s")
 
-print("\n--- Request Waiting Statistics ---")
-avg_waiting_requests = system.total_waiting_area / env.now
-print(f"{'Average waiting requests':<30}: {avg_waiting_requests:.4f}")
-
-# Verify using Little's Law
-if latency_stats['count'] > 0:
-    littles_law_estimate = REQUEST_ARRIVAL_RATE * (1 - block_perc/100)*(latency_stats['waiting_time'] / latency_stats['count'])
-    print(f"{'Littles Law estimate':<30}: {littles_law_estimate:.4f}")
-    print(f"{'Difference':<30}: {(avg_waiting_requests - littles_law_estimate):.4f}")
-
-print("\n--- Final Cluster Servers ---")
-for server in cluster.servers:
-    print(server)
+# Calculate Little's Law metrics
+if system.env.now > 0:
+    avg_waiting_count = system.total_waiting_area / system.env.now
+    effective_arrival_rate = request_stats['processed'] / system.env.now
+    little_law_wait_time = avg_waiting_count / effective_arrival_rate if effective_arrival_rate > 0 else 0
+    
+    print("\n--- Queue Metrics ---")
+    print(f"Average number of waiting requests: {avg_waiting_count:.2f}")
+    print(f"Effective arrival rate: {effective_arrival_rate:.2f} req/s")
+    print(f"Little's Law predicted waiting time: {little_law_wait_time:.2f}s")
+    print(f"Actual average waiting time from measurements: {avg_wait:.2f}s")

@@ -5,18 +5,18 @@ import time
 import os
 import pandas as pd
 from datetime import datetime
+import math
 
 # Import simulator components
 from System import System
-from Topology import Topology
-from Cluster import Cluster
-from variables import request_stats, latency_stats
+from Server import Server
+from variables import request_stats, latency_stats, config
 
 # Import Markov model
 from Markov.model_3D import MarkovModel
 
 class ModelComparison:
-    def __init__(self, output_dir='comparison_results'):
+    def __init__(self, output_dir='comparison_results', verbose=False):
         """
         Initialize the comparison framework.
         
@@ -24,16 +24,17 @@ class ModelComparison:
             output_dir (str): Directory to save comparison results
         """
         self.output_dir = output_dir
+        self.verbose = verbose
         os.makedirs(output_dir, exist_ok=True)
         self.results = []
     
-    def run_scenario(self, scenario_name, config):
+    def run_scenario(self, scenario_name, config_params):
         """
         Run a single scenario comparing the Markov model with the simulator.
         
         Args:
             scenario_name (str): Name of the scenario for reporting
-            config (dict): Configuration parameters for both models
+            config_params (dict): Configuration parameters for both models
         
         Returns:
             dict: Results of the comparison
@@ -42,23 +43,27 @@ class ModelComparison:
         start_time = time.time()
         
         # Extract configuration parameters
-        lam = config.get('arrival_rate')
-        mu = config.get('service_rate')
-        alpha = config.get('spawn_rate')  
-        beta = config.get('assign_rate')
-        theta = config.get('timeout_rate')  
-        max_queue = config.get('max_queue')
+        lam = config_params.get('arrival_rate')
+        mu = config_params.get('service_rate')
+        alpha = config_params.get('spawn_rate')  
+        beta = config_params.get('arrival_rate') # assign rate equals arrival rate
+        theta = config_params.get('timeout_rate')  
         # Parameters for the simulator
-        num_servers = config.get('num_servers')
-        server_cpu = config.get('server_cpu')
-        server_ram = config.get('server_ram')
-        sim_time = config.get('sim_time')
-        cpu_demand = config.get('cpu_demand')
-        ram_demand = config.get('ram_demand')
-        cpu_warm = config.get('cpu_warm')
-        ram_warm = config.get('ram_warm')
-        random_seed = config.get('random_seed')
+        num_servers = config_params.get('num_servers')
+        server_cpu = config_params.get('server_cpu')
+        server_ram = config_params.get('server_ram')
+        sim_time = config_params.get('sim_time')
+        cpu_demand = config_params.get('cpu_demand')
+        ram_demand = config_params.get('ram_demand')
+        cpu_warm = config_params.get('cpu_warm')
+        ram_warm = config_params.get('ram_warm')
+        distribution = config_params.get('distribution')
+        random_seed = config_params.get('random_seed')
         
+        # Calculate max_queue dynamically based on the formula
+        max_queue = num_servers * math.floor(100/max(cpu_demand, ram_demand))
+        print(f"Max queue size: {max_queue} for {num_servers} servers")
+        print(f"CPU demand: {cpu_demand}, RAM demand: {ram_demand}")
         # Create Markov model config (converting parameters as needed)
         markov_config = {
             "lam": lam,
@@ -69,56 +74,42 @@ class ModelComparison:
             "max_queue": max_queue,
             "num_runs": 1
         }
-        
+        print(f"Markov model config: {markov_config}")
         # Run Markov model
         markov_metrics = self._run_markov_model(markov_config)
         
-        # Set up simulator parameters
-        global REQUEST_ARRIVAL_RATE, REQUEST_SERVICE_RATE, CONTAINER_SPAWN_TIME
-        global CONTAINER_IDLE_TIMEOUT, CONTAINER_ASSIGN_RATE, NUM_SERVERS
-        global SERVER_CPU_CAPACITY, SERVER_RAM_CAPACITY, SIM_TIME
-        global CPU_DEMAND, RAM_DEMAND, CPU_WARM, RAM_WARM, RANDOM_SEED
+        # Create a simulator configuration based on the passed parameters
+        simulator_config = {
+            "system": {
+                "num_servers": num_servers,
+                "sim_time": sim_time,
+                "distribution": distribution,
+                "verbose": self.verbose,
+            },
+            "server": {
+                "cpu_capacity": server_cpu,
+                "ram_capacity": server_ram,
+            },
+            "request": {
+                "arrival_rate": lam,
+                "service_rate": mu,
+                "bandwidth_demand": 10.0,  # Default value
+                "cpu_warm": cpu_warm,
+                "ram_warm": ram_warm,
+                "cpu_demand": cpu_demand,
+                "ram_demand": ram_demand,
+            },
+            "container": {
+                "spawn_time": 1/alpha if alpha > 0 else exit(1),
+                "idle_timeout": 1/theta if theta > 0 else exit(1),
+            },
+            "topology": {
+                "use_topology": False,
+            }
+        }
         
-        # Save original values to restore after simulation
-        # original_vals = {
-        #     'REQUEST_ARRIVAL_RATE': REQUEST_ARRIVAL_RATE,
-        #     'REQUEST_SERVICE_RATE': REQUEST_SERVICE_RATE,
-        #     'CONTAINER_SPAWN_TIME': CONTAINER_SPAWN_TIME,
-        #     'CONTAINER_IDLE_TIMEOUT': CONTAINER_IDLE_TIMEOUT,
-        #     'CONTAINER_ASSIGN_RATE': CONTAINER_ASSIGN_RATE,
-        #     'NUM_SERVERS': NUM_SERVERS,
-        #     'SERVER_CPU_CAPACITY': SERVER_CPU_CAPACITY,
-        #     'SERVER_RAM_CAPACITY': SERVER_RAM_CAPACITY,
-        #     'SIM_TIME': SIM_TIME,
-        #     'CPU_DEMAND': CPU_DEMAND,
-        #     'RAM_DEMAND': RAM_DEMAND,
-        #     'CPU_WARM': CPU_WARM,
-        #     'RAM_WARM': RAM_WARM,
-        #     'RANDOM_SEED': RANDOM_SEED
-        # }
-        
-        # Set new values for this scenario
-        REQUEST_ARRIVAL_RATE = lam
-        REQUEST_SERVICE_RATE = mu
-        CONTAINER_SPAWN_TIME = 1/alpha if alpha > 0 else 5.0
-        CONTAINER_IDLE_TIMEOUT = 1/theta if theta > 0 else 2.0
-        CONTAINER_ASSIGN_RATE = beta
-        NUM_SERVERS = num_servers
-        SERVER_CPU_CAPACITY = server_cpu
-        SERVER_RAM_CAPACITY = server_ram
-        SIM_TIME = sim_time
-        CPU_DEMAND = cpu_demand
-        RAM_DEMAND = ram_demand 
-        CPU_WARM = cpu_warm
-        RAM_WARM = ram_warm
-        RANDOM_SEED = random_seed
-        
-        # Run simulator and get metrics
-        simulator_metrics = self._run_simulator()
-        
-        # Restore original values
-        # for key, val in original_vals.items():
-        #     globals()[key] = val
+        # Run simulator with the config
+        simulator_metrics = self._run_simulator(simulator_config, random_seed)
         
         # Calculate comparison metrics
         comparison = self._compare_metrics(markov_metrics, simulator_metrics)
@@ -126,7 +117,7 @@ class ModelComparison:
         # Add scenario info
         result = {
             'scenario_name': scenario_name,
-            'config': config,
+            'config': config_params,
             'markov_metrics': markov_metrics,
             'simulator_metrics': simulator_metrics,
             'comparison': comparison,
@@ -157,57 +148,112 @@ class ModelComparison:
             print(f"Error running Markov model: {e}")
             return {}
     
-    def _run_simulator(self):
-        """Run the simulator and extract its metrics."""
-        print("Running simulator...")
+    def _run_simulator(self, sim_config, random_seed, num_repetitions=10):
+        """
+        Run the simulator multiple times and extract averaged metrics.
         
-        # Reset statistics dictionaries
-        for key in request_stats:
-            request_stats[key] = 0
+        Args:
+            sim_config (dict): Simulator configuration
+            random_seed (int): Base random seed for reproducibility
+            num_repetitions (int): Number of repetitions to run the simulator
+            
+        Returns:
+            dict: Averaged metrics from the simulator runs
+        """
+        print(f"Running simulator with {num_repetitions} repetitions...")
         
-        for key in latency_stats:
-            latency_stats[key] = 0.0
-        
-        # Set up simulator environment
-        random.seed(RANDOM_SEED)
-        env = simpy.Environment()
-        
-        # Set up topology (simplified version without topology)
-        use_topology = False
-        topology = None
-        cluster_node = "default_node"
-        
-        # Create cluster and system
-        cluster = Cluster(env, cluster_node, NUM_SERVERS, SERVER_CPU_CAPACITY, SERVER_RAM_CAPACITY)
-        system = System(env, REQUEST_ARRIVAL_RATE, REQUEST_SERVICE_RATE, CONTAINER_SPAWN_TIME,
-                       CONTAINER_IDLE_TIMEOUT, topology, cluster, use_topology=use_topology)
-        
-        # Start the simulation
-        env.process(system.request_generator())
-        env.run(until=SIM_TIME)
-        
-        # Use the system's built-in waiting requests tracking
-        # Make sure system updates its statistics one final time
-        system.update_waiting_stats()
-        avg_waiting_requests = system.total_waiting_area / env.now
-        
-        # Calculate other metrics
-        total_blocked = request_stats['blocked_no_server_capacity'] + request_stats['blocked_spawn_failed']
-        effective_arrival_rate = REQUEST_ARRIVAL_RATE * (1 - total_blocked / request_stats['generated']) if request_stats['generated'] > 0 else 0
-        
-        # Calculate waiting time from latency statistics
-        avg_waiting_time = 0
-        if latency_stats['count'] > 0:
-            avg_waiting_time = latency_stats['waiting_time'] / latency_stats['count']
-        
-        # Construct metrics object
-        metrics = {
-            'blocking_ratios': total_blocked / request_stats['generated'] if request_stats['generated'] > 0 else 0,
-            'waiting_requests': avg_waiting_requests,  # Use the system's built-in tracking
-            'processing_requests': request_stats['processed'] / SIM_TIME,
-            'effective_arrival_rates': effective_arrival_rate,
-            'waiting_times': avg_waiting_time
+        # Initialize container for storing metrics from each run
+        all_metrics = {
+            'blocking_ratios': [],
+            'waiting_requests': [],
+            'effective_arrival_rates': [],
+            'waiting_times': []
         }
+        
+        # Run the simulator for the specified number of repetitions
+        for rep in range(num_repetitions):
+            # Use a different seed for each repetition but derived from the base seed
+            current_seed = random_seed + rep
+            
+            # Reset statistics dictionaries
+            for key in request_stats:
+                request_stats[key] = 0
+            
+            for key in latency_stats:
+                latency_stats[key] = 0.0
+            
+            # Set up simulator environment
+            random.seed(current_seed)
+            env = simpy.Environment()
+            
+            # Create system with the config
+            system = System(env, sim_config, sim_config["system"]["distribution"], sim_config["system"]["verbose"])
+            
+            # Add servers directly to the system
+            if rep == 0:  # Only print configuration details on the first run
+                print("Request arrival rate:", sim_config["request"]["arrival_rate"])
+                print("Request service rate:", sim_config["request"]["service_rate"])
+                print("Container spawn time:", sim_config["container"]["spawn_time"])
+                print("Container idle timeout:", sim_config["container"]["idle_timeout"])
+                print("Number of servers:", sim_config["system"]["num_servers"])
+                print("Server CPU capacity:", sim_config["server"]["cpu_capacity"])
+                print("Server RAM capacity:", sim_config["server"]["ram_capacity"])
+                print("Simulation time:", sim_config["system"]["sim_time"])
+                print("CPU demand:", sim_config["request"]["cpu_demand"])
+                print("RAM demand:", sim_config["request"]["ram_demand"])
+                print("CPU warm:", sim_config["request"]["cpu_warm"])
+                print("RAM warm:", sim_config["request"]["ram_warm"])
+                print("Distribution:", sim_config["system"]["distribution"])
+            
+            for i in range(sim_config["system"]["num_servers"]):
+                server = Server(env, i, sim_config["server"]["cpu_capacity"], sim_config["server"]["ram_capacity"])
+                system.add_server(server)
+            
+            # Start the simulation
+            env.process(system.request_generator())
+            env.run(until=sim_config["system"]["sim_time"])
+            
+            # Use the system's built-in waiting requests tracking
+            # Make sure system updates its statistics one final time
+            system.update_waiting_stats()
+            avg_waiting_requests = system.total_waiting_area / env.now
+            
+            # Calculate other metrics
+            total_blocked = request_stats['blocked_no_server_capacity']
+            effective_arrival_rate = sim_config["request"]["arrival_rate"] * (1 - total_blocked / request_stats['generated']) if request_stats['generated'] > 0 else 0
+            
+            # Calculate waiting time from latency statistics
+            avg_waiting_time = 0
+            if latency_stats['count'] > 0:
+                avg_waiting_time = latency_stats['waiting_time'] / latency_stats['count']
+            
+            # Collect metrics from this run
+            all_metrics['blocking_ratios'].append(total_blocked / request_stats['generated'] if request_stats['generated'] > 0 else 0)
+            all_metrics['waiting_requests'].append(avg_waiting_requests)
+            all_metrics['effective_arrival_rates'].append(effective_arrival_rate)
+            all_metrics['waiting_times'].append(avg_waiting_time)
+            
+            print(f"Completed run {rep+1}/{num_repetitions}")
+        
+        # Calculate average metrics across all runs
+        metrics = {
+            'blocking_ratios': np.mean(all_metrics['blocking_ratios']),
+            'waiting_requests': np.mean(all_metrics['waiting_requests']),
+            'effective_arrival_rates': np.mean(all_metrics['effective_arrival_rates']),
+            'waiting_times': np.mean(all_metrics['waiting_times'])
+        }
+        
+        # Also calculate standard deviations for reference
+        metrics_std = {
+            'blocking_ratios_std': np.std(all_metrics['blocking_ratios']),
+            'waiting_requests_std': np.std(all_metrics['waiting_requests']),
+            'effective_arrival_rates_std': np.std(all_metrics['effective_arrival_rates']),
+            'waiting_times_std': np.std(all_metrics['waiting_times'])
+        }
+        
+        print("Average simulator metrics:")
+        for key, value in metrics.items():
+            print(f"  {key}: {value:.6f} (std: {metrics_std[key+'_std']:.6f})")
         
         return metrics
     
@@ -217,12 +263,14 @@ class ModelComparison:
         
         Args:
             markov_metrics (dict): Metrics from the Markov model
-            simulator_metrics (dict): Metrics from the simulator
+            simulator_metrics (dict): Metrics from the simulator (averaged from multiple runs)
             
         Returns:
             dict: Comparison results including MSE and MAPE
         """
         comparison = {}
+        squared_errors = []
+        percentage_errors = []
         
         # Ensure both metrics have the same keys
         all_keys = set(markov_metrics.keys()) | set(simulator_metrics.keys())
@@ -236,12 +284,14 @@ class ModelComparison:
                 abs_error = abs(markov_val - sim_val)
                 
                 # Calculate squared error
-                squared_error = abs_error ** 2
+                squared_error = (markov_val - sim_val) ** 2
+                squared_errors.append(squared_error)
                 
                 # Calculate absolute percentage error if possible
                 ape = 0
                 if sim_val != 0:
                     ape = (abs_error / abs(sim_val)) * 100
+                    percentage_errors.append(ape)
                 
                 comparison[key] = {
                     'markov_value': markov_val,
@@ -253,12 +303,15 @@ class ModelComparison:
         
         # Calculate MSE across all metrics
         if comparison:
-            mse = sum(item['squared_error'] for item in comparison.values()) / len(comparison)
-            mape = sum(item['absolute_percentage_error'] for item in comparison.values()) / len(comparison)
+            # Mean Squared Error
+            mse = sum(squared_errors) / len(squared_errors) if squared_errors else 0
+            # Mean Absolute Percentage Error
+            mape = sum(percentage_errors) / len(percentage_errors) if percentage_errors else 0
             
             comparison['overall'] = {
                 'MSE': mse,
-                'MAPE': mape
+                'MAPE': mape,
+                'RMSE': np.sqrt(mse)  # Root Mean Squared Error
             }
         
         return comparison
@@ -285,7 +338,7 @@ class ModelComparison:
             }
             
             # Add individual metric comparisons
-            for metric in ['blocking_ratios', 'waiting_requests', 'processing_requests', 
+            for metric in ['blocking_ratios', 'waiting_requests', 
                           'effective_arrival_rates', 'waiting_times']:
                 if metric in result['comparison']:
                     summary[f'{metric}_Markov'] = result['comparison'][metric]['markov_value']
@@ -328,7 +381,7 @@ class ModelComparison:
                 report += f"Overall MAPE: {result['comparison']['overall']['MAPE']:.2f}%\n\n"
                 
                 report += "Metric Comparison:\n"
-                for metric in ['blocking_ratios', 'waiting_requests', 'processing_requests', 
+                for metric in ['blocking_ratios', 'waiting_requests', 
                               'effective_arrival_rates', 'waiting_times']:
                     if metric in result['comparison']:
                         comp = result['comparison'][metric]
@@ -353,60 +406,84 @@ if __name__ == "__main__":
     # Example usage:
     comparator = ModelComparison()
     
-    # Define different scenarios to test
-    scenarios = [
-        # Scenario 1: Base configuration
-        ("Base Configuration", {
-            'arrival_rate': 10,
-            'service_rate': 1,
-            'spawn_rate': 1/5,
-            'assign_rate': 1000,
-            'timeout_rate': 0.5,
-            'max_queue': 4,
-            'num_servers': 2,
-            'server_cpu': 100,
-            'server_ram': 100,
-            'sim_time': 1000,
-            'cpu_demand': 49,
-            'ram_demand': 49,
-            'cpu_warm': 49,
-            'ram_warm': 49,
-            'random_seed': 42
-        }),
+    # Define parameter ranges for random scenario generation
+    arrival_rate_range = [1, 10]          # Requests per second
+    service_rate_range = [0.5, 5]         # Service rate (requests per second)
+    spawn_rate_range = [1/10, 1/1]        # Container spawn rate (containers per second)
+    timeout_rate_range = [0.1, 2]         # Container timeout rate (timeouts per second)
+    num_servers_range = [1, 5]            # Number of servers
+    # server_cpu_range = [50, 200]          # CPU capacity
+    # server_ram_range = [50, 200]          # RAM capacity
+    # sim_time_range = [500, 1500]          # Simulation time
+    cpu_demand_range = [10, 80]           # CPU demand for cold containers
+    ram_demand_range = [10, 80]           # RAM demand for cold containers
+    # distribution_types = ['exponential'] # Distribution types
+    
+    # Define both fixed and random scenarios
+    scenarios = []
+    
+    # Generate 10 random scenarios
+    random.seed(123)  # Fixed seed for reproducibility
+    for i in range(10):
+        # Randomly select parameters from defined ranges
+        arrival_rate = round(random.uniform(*arrival_rate_range), 1)
+        service_rate = round(random.uniform(*service_rate_range), 1)
+        spawn_rate = round(random.uniform(*spawn_rate_range), 1)
+        timeout_rate = round(random.uniform(*timeout_rate_range), 1)
+        num_servers = random.randint(*num_servers_range)
+        # server_cpu = random.randint(*server_cpu_range)
+        # server_ram = random.randint(*server_ram_range)
+        server_cpu = 100  # Fixed CPU for simplicity
+        server_ram = 100
+        sim_time = 500  # Fixed simulation time for simplicity
         
-        # # Scenario 2: Higher arrival rate
-        # ("High Arrival Rate", {
-        #     'arrival_rate': 20,
-        #     'service_rate': 2,
-        #     'spawn_rate': 1/5,
-        #     'assign_rate': 1000,
-        #     'timeout_rate': 0.5,
-        #     'max_queue': 4,
-        #     'num_servers': 2,
-        #     'sim_time': 1000,
-        #     'random_seed': 42
-        # }),
+        # Ensure warm resources are less than demand resources
+        cpu_demand = random.randint(*cpu_demand_range)
+        ram_demand = random.randint(*ram_demand_range)
         
-        # # Scenario 3: Slower service rate
-        # ("Slow Service Rate", {
-        #     'arrival_rate': 10,
-        #     'service_rate': 1,
-        #     'spawn_rate': 1/5,
-        #     'assign_rate': 1000, 
-        #     'timeout_rate': 0.5,
-        #     'max_queue': 4,
-        #     'num_servers': 2,
-        #     'sim_time': 1000,
-        #     'random_seed': 42
-        # })
-    ]
+        # Warm resources are a percentage (50-90%) of demand resources
+        warm_percentage = random.uniform(0.1, 0.9)
+        cpu_warm = int(cpu_demand * warm_percentage)
+        ram_warm = int(ram_demand * warm_percentage)
+        
+        distribution = 'exponential'  # Fixed distribution for simplicity
+        
+        # Create random scenario
+        random_scenario = (
+            f"Random Scenario {i+1}",
+            {
+                'arrival_rate': arrival_rate,
+                'service_rate': service_rate,
+                'spawn_rate': spawn_rate,
+                'timeout_rate': timeout_rate,
+                'num_servers': num_servers,
+                'server_cpu': server_cpu,
+                'server_ram': server_ram,
+                'sim_time': sim_time,
+                'cpu_demand': cpu_demand,
+                'ram_demand': ram_demand,
+                'cpu_warm': cpu_warm,
+                'ram_warm': ram_warm,
+                'random_seed': 42 + i,  # Different seed for each scenario
+                'distribution': distribution
+            }
+        )
+        
+        scenarios.append(random_scenario)
     
     # Run scenarios and get summary
     summary_df = comparator.run_multiple_scenarios(scenarios)
     print(summary_df)
     
+    # Calculate aggregate error metrics across all random scenarios
+    random_scenarios_df = summary_df[summary_df['Scenario'].str.contains('Random')]
+    if not random_scenarios_df.empty:
+        avg_mse = random_scenarios_df['MSE'].mean()
+        avg_mape = random_scenarios_df['MAPE'].mean()
+        print(f"\nAggregate Error Metrics for Random Scenarios:")
+        print(f"Average MSE: {avg_mse:.6f}")
+        print(f"Average MAPE: {avg_mape:.2f}%")
+    
     # Generate and print report
     report = comparator.generate_report()
     print(report)
-    
-    # You can add more scenarios or modify the existing ones as needed

@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt  # For plotting
 import numpy as np
 from scipy import linalg
 # from .graph import draw_graph, draw_graph_new
-# from graph import draw_graph_updated
+from graph import draw_graph, draw_graph_new
 
 
 class MarkovModel():
@@ -77,9 +77,9 @@ class MarkovModel():
             current_state = waiting.pop(0)
             visited.append(current_state)
             
-            # IDENTIFY NEXT Pending state
-            if current_state[0] + current_state[1] + current_state[2] < self._max_queue \
-                and current_state[2] == 0:
+            # IDENTIFY NEXT ARRIVAL STATE
+            # preloaded_segments = current_state[0] - (current_state[1] - current_state[2])
+            if current_state[0] + current_state[2] < self._max_queue:
                 next_lambda_state = (current_state[0]+1, 
                                      current_state[1], 
                                      current_state[2])
@@ -87,20 +87,25 @@ class MarkovModel():
                 next_lambda_state = current_state  # loops are not added
 
             
-            # IDENTIFY next active state
-            if current_state[0] > 0:
-                next_alpha_state = (current_state[0] - 1, current_state[1] + 1, current_state[2]) 
+            # IDENTIFY NEXT CONTAINER SPAWNING STATE IF POSSIBLE 
+            if current_state[0] > current_state[1]:
+                next_alpha_state = (current_state[0], current_state[1] + 1, current_state[2]) 
+                # print("current_state:", current_state)
+                # print("next_alpha_state:", next_alpha_state)
+            # INDENTIFY NEXT REQUEST BEING SERVED STATE IF POSSIBLE
+            if current_state[2] < self._max_queue and current_state[0] > 0 and current_state[1] > 0:
+                next_beta_state = (current_state[0] - 1, current_state[1] - 1, current_state[2] + 1)
+                # print("current_state:", current_state)
+                # print("next_beta_state:", next_beta_state)
             # IDENTIFY END OF SERVING STATE
-            if current_state[1] > 0:
-                next_mu_state = (current_state[0], current_state[1] - 1, current_state[2] + 1)
-               
-            # INDENTIFY idle encourter state
             if current_state[2] > 0:
-                next_beta_state = (current_state[0], current_state[1] + 1, current_state[2] - 1)
-            
+                next_mu_state = (current_state[0], current_state[1] + 1, current_state[2] - 1)
+                # print("current_state:", current_state)
+                # print("next_mu_state:", next_mu_state)
             # INDENTIFY CONTAINER TIMEOUT STATE
-            if current_state[2] > 0:
-                next_theta_state = (current_state[0], current_state[1], current_state[2] - 1)
+            # if current_state[1] > 0 and current_state[0] == 0:
+            if current_state[1] > 0:
+                next_theta_state = (current_state[0], current_state[1] - 1, current_state[2])
                 # print("current_state:", current_state)
                 # print("next_theta_state:", next_theta_state)
             
@@ -110,23 +115,23 @@ class MarkovModel():
             waiting = add_state(visited, waiting, next_lambda_state)
 
             if next_alpha_state:
-                string_alpha = f"{current_state[0]}$\\alpha$"
+                string_alpha = f"{(current_state[0] - current_state[1])}$\\alpha$"
                 # print("current_state:", current_state)
                 # print("alpha:", selstring_alpha)
-                add_transition(current_state, next_alpha_state, rate=current_state[0]*self._alpha, string=string_alpha, color=color_alpha)
+                add_transition(current_state, next_alpha_state, rate=(current_state[0] - current_state[1])*self._alpha, string=string_alpha, color=color_alpha)
                 waiting = add_state(visited, waiting, next_alpha_state)
             if next_beta_state:
-                # coe = min(current_state[0], current_state[1])
+                coe = min(current_state[0], current_state[1])
                 string_beta = f"$\\beta$"
                 add_transition(current_state, next_beta_state, rate=self._beta, string=string_beta, color=color_beta)
                 waiting = add_state(visited, waiting, next_beta_state)        
             if next_theta_state:
-                string_theta = f"{current_state[2]}$\\theta$"
-                add_transition(current_state, next_theta_state, rate=current_state[2]*self._theta, string=string_theta, color=color_theta)
+                string_theta = f"{current_state[1]}$\\theta$"
+                add_transition(current_state, next_theta_state, rate=current_state[1]*self._theta, string=string_theta, color=color_theta)
                 waiting = add_state(visited, waiting, next_theta_state)
             if next_mu_state:
-                string_mu = f"{current_state[1]}$\\mu$"
-                add_transition(current_state, next_mu_state, rate=current_state[1]*self._mu, string=string_mu, color=color_mu)
+                string_mu = f"{current_state[2]}$\\mu$"
+                add_transition(current_state, next_mu_state, rate=current_state[2]*self._mu, string=string_mu, color=color_mu)
                 waiting = add_state(visited, waiting, next_mu_state)        
             # ADD NEW STATES TO QUEUE
                 
@@ -236,7 +241,7 @@ class MarkovModel():
     def _get_blocking_states(self):
         blocking_states = []
         for s in self._n2i:
-            if s[0] + s[1] == self._max_queue:
+            if s[0] + s[2] == self._max_queue:
                 blocking_states.append(s)
         return blocking_states
 
@@ -249,7 +254,7 @@ class MarkovModel():
     #     return [(0,0,0)]
     
     def _compute_processing_requests(self):
-        return np.sum([s[1]*self._state_probabilities[s] for s in self._get_request_waiting_states()])
+        return np.sum([s[2]*self._state_probabilities[s] for s in self._get_request_waiting_states()])
     
     def _compute_effective_arrival_rate(self, block_ratio):
         return self._lam*( 1 - block_ratio)
@@ -451,14 +456,14 @@ class MarkovModel():
     
 if __name__=="__main__":
     config = {
-        "lam": 1.5,
-        "mu": 0.9,
-        "alpha": 1/2,
-        "beta": 1.5,
-        "theta": 0.3,
+        "lam": 10,
+        "mu": 2,
+        "alpha": 1/5,
+        "beta": 1000,
+        "theta": 1/2,
         # "segments_per_video": 3,
         # "preload_segments_per_video": 1,
-        "max_queue": 1, # queue
+        "max_queue": 2, # queue
         "serving_time": "exponential",
         "arrivals": "exponential",
         # "lam_factor": 1,
@@ -467,5 +472,5 @@ if __name__=="__main__":
     }
     m = MarkovModel(config, verbose=False)
     G = m._G
-    # draw_graph_updated(G, node_size=1000)
+    draw_graph_new(G, node_size=1000)
     print(m.get_metrics())

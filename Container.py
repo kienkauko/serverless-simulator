@@ -1,7 +1,7 @@
 import itertools
 import simpy 
 import random
-from variables import CONTAINER_ASSIGN_RATE
+# from variables import CONTAINER_ASSIGN_RATE
 
 class Container:
     """Represents a container instance spawned on a server."""
@@ -37,16 +37,17 @@ class Container:
 
         try:
             # Add a small timeout to make this a generator function
-            assign_time = random.expovariate(CONTAINER_ASSIGN_RATE)
-            yield self.env.timeout(assign_time)
+            # assign_time = random.expovariate(CONTAINER_ASSIGN_RATE)
+            # yield self.env.timeout(assign_time)
             
             if self.state == "Dead":
                 print(f"{self.env.now:.2f} - ERROR: {self} is dead, cannot assign request {request}")
-                return False # Should not happen with correct logic
+                exit(1) # Should not happen with correct logic
             # Modify resources in the container
             delta_cpu = request.cpu_demand - self.cpu_alloc
             delta_ram = request.ram_demand - self.ram_alloc
-            print(f"{self.env.now:.2f} - {self} request asks for more resources (+CPU:{delta_cpu:.1f}, +RAM:{delta_ram:.1f})")
+            if self.system.verbose:
+                print(f"{self.env.now:.2f} - {self} request asks for more resources (+CPU:{delta_cpu:.1f}, +RAM:{delta_ram:.1f})")
             
             # Use the server's resource lock to prevent race conditions - request the lock
             lock_request = self.server.resource_lock.request()
@@ -58,12 +59,13 @@ class Container:
                 
                 # Attempt to allocate the new resources
                 if not self.server.allocate_resources(delta_cpu, delta_ram):
-                    print(f"{self.env.now:.2f} - ERROR: Insufficient resources on {self.server} for {request}")
+                    print(f"{self.env.now:.2f} - FATAL ERROR: Insufficient resources on {self.server} for {request}")
                     # Release the lock before returning
                     self.server.resource_lock.release(lock_request)
-                    return False
+                    exit(1)
                 
-                print(f"{self.env.now:.2f} - {self} allocated resources (CPU:{delta_cpu:.1f}, RAM:{delta_ram:.1f}) for {request} on {self.server}")
+                if self.system.verbose:
+                    print(f"{self.env.now:.2f} - {self} allocated resources (CPU:{delta_cpu:.1f}, RAM:{delta_ram:.1f}) for {request} on {self.server}")
                 
                 # Release the lock after successful allocation
                 self.server.resource_lock.release(lock_request)
@@ -84,7 +86,8 @@ class Container:
                 
                 # If this container was idle, cancel its removal timeout
                 if self.idle_timeout_process and not self.idle_timeout_process.triggered:
-                    print(f"{self.env.now:.2f} - Cancelling idle timeout for reused {self}")
+                    if self.system.verbose:
+                        print(f"{self.env.now:.2f} - Cancelling idle timeout for reused {self}")
                     self.idle_timeout_process.interrupt()
                     self.idle_timeout_process = None # Clear the process handle
                     
@@ -98,7 +101,8 @@ class Container:
                 
         except simpy.Interrupt:
             # This will be triggered if the idle_timeout_process interrupts this process
-            print(f"{self.env.now:.2f} - {self} assignment process for {request} was interrupted by timeout")
+            if self.system.verbose:
+                print(f"{self.env.now:.2f} - {self} assignment process for {request} was interrupted by timeout")
             return False
 
     def release_request(self):
@@ -118,6 +122,9 @@ class Container:
         try:
             self.server.cpu_real += delta_cpu
             self.server.ram_real += delta_ram
+            if self.server.cpu_real > self.server.cpu_capacity or self.server.ram_real > self.server.ram_capacity:
+                print(f"FATAL ERROR: {self.env.now:.2f} - {self} released more resources than server capacity (CPU:{self.server.cpu_real:.1f}/{self.server.cpu_capacity:.1f}, RAM:{self.server.ram_real:.1f}/{self.server.ram_capacity:.1f})")
+                exit(1)
         except Exception as e:
             print(f"FATAL ERROR: releasing resources for {self}: {e}")
             exit(1)
@@ -132,8 +139,9 @@ class Container:
         # Clear the current request
         finished_request = self.current_request
         finished_request.end_service_time = self.env.now
-        print(f"{self.env.now:.2f} - {finished_request} finished service in {self}. Duration: {finished_request.end_service_time - finished_request.start_service_time:.2f}")
-        print(f"{self.env.now:.2f} - {finished_request} releasing request")
+        if self.system.verbose:
+            print(f"{self.env.now:.2f} - {finished_request} finished service in {self}. Duration: {finished_request.end_service_time - finished_request.start_service_time:.2f}")
+            print(f"{self.env.now:.2f} - {finished_request} releasing request")
         self.current_request = None
         self.idle_since = self.env.now
         # Put the container into the idle pool
@@ -143,17 +151,24 @@ class Container:
 
     def release_resources(self):
         """Returns allocated CPU and RAM resources back to the server."""
-        print(f"{self.env.now:.2f} - {self} idle timeout expired, removing container")
+        if self.system.verbose:
+            print(f"{self.env.now:.2f} - {self} idle timeout expired, removing container")
         # Use try-except blocks for robustness
         self.state = "Dead"
         try:
             self.server.cpu_real += self.cpu_alloc
             self.server.cpu_reserve += self.cpu_reserve
+            if self.server.cpu_real > self.server.cpu_capacity or self.server.cpu_reserve > self.server.cpu_capacity:
+                print(f"FATAL ERROR: {self.env.now:.2f} - {self} released more CPU than server capacity (CPU:{self.server.cpu_real:.1f}/{self.server.cpu_capacity:.1f})")
+                exit(1)
         except Exception as e:
              print(f"ERROR releasing CPU for {self}: {e}")
         try:
             self.server.ram_real += self.ram_alloc
             self.server.ram_reserve += self.ram_reserve
+            if self.server.ram_real > self.server.ram_capacity or self.server.ram_reserve > self.server.ram_capacity:
+                print(f"FATAL ERROR: {self.env.now:.2f} - {self} released more RAM than server capacity (RAM:{self.server.ram_real:.1f}/{self.server.ram_capacity:.1f})")
+                exit(1)
         except Exception as e:
              print(f"ERROR releasing RAM for {self}: {e}")
         # Remove from server's list

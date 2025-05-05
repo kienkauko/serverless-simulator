@@ -10,10 +10,10 @@ class Request:
         self.start_service_time = -1 # Mark when service starts
         self.end_service_time = -1   # Mark when service ends
         self.origin_node = origin_node  # New: the topology node from which the request is sent
-        # New: initialize spawn time and propagation delay
+        # Initialize spawn time
         self.spawn_time = 0.0
-        self.prop_delay = 0.0
         self.wait_time = 0.0   # Time waiting for container + assignment time
+        self.state = "None"  # Initial state: "Pending", can change to "Running", "Rejected", "Finished"
 
     def __str__(self):
         return f"Req_{self.id} from {self.origin_node}"
