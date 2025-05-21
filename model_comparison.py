@@ -57,13 +57,15 @@ class ModelComparison:
         ram_demand = config_params.get('ram_demand')
         cpu_warm = config_params.get('cpu_warm')
         ram_warm = config_params.get('ram_warm')
+        cpu_transit = config_params.get('cpu_transit')
+        ram_transit = config_params.get('ram_transit')
         distribution = config_params.get('distribution')
         random_seed = config_params.get('random_seed')
         
         # Calculate max_queue dynamically based on the formula
         max_queue = num_servers * math.floor(100/max(cpu_demand, ram_demand))
-        print(f"Max queue size: {max_queue} for {num_servers} servers")
-        print(f"CPU demand: {cpu_demand}, RAM demand: {ram_demand}")
+        # print(f"Max queue size: {max_queue} for {num_servers} servers")
+        # print(f"CPU demand: {cpu_demand}, RAM demand: {ram_demand}")
         # Create Markov model config (converting parameters as needed)
         markov_config = {
             "lam": lam,
@@ -72,6 +74,10 @@ class ModelComparison:
             "beta": beta,
             "theta": theta,
             "max_queue": max_queue,
+            "ram_warm": ram_warm,
+            "cpu_warm": cpu_warm,
+            "ram_demand": ram_demand,
+            "cpu_demand": cpu_demand,
             "num_runs": 1
         }
         print(f"Markov model config: {markov_config}")
@@ -98,6 +104,8 @@ class ModelComparison:
                 "ram_warm": ram_warm,
                 "cpu_demand": cpu_demand,
                 "ram_demand": ram_demand,
+                "cpu_transit": cpu_transit,
+                "ram_transit": ram_transit,
             },
             "container": {
                 "spawn_time": 1/alpha if alpha > 0 else exit(1),
@@ -141,6 +149,7 @@ class ModelComparison:
         try:
             model = MarkovModel(config, verbose=False)
             metrics = model.get_metrics()
+            
             # Convert lists to scalar values for easier comparison
             return {k: v[0] if isinstance(v, list) and len(v) > 0 else v 
                    for k, v in metrics.items()}
@@ -167,7 +176,9 @@ class ModelComparison:
             'blocking_ratios': [],
             'waiting_requests': [],
             'effective_arrival_rates': [],
-            'waiting_times': []
+            'waiting_times': [],
+            'mean_cpu_usage': [],
+            'mean_ram_usage': []
         }
         
         # Run the simulator for the specified number of repetitions
@@ -227,11 +238,18 @@ class ModelComparison:
             if latency_stats['count'] > 0:
                 avg_waiting_time = latency_stats['waiting_time'] / latency_stats['count']
             
+            # Calculate mean CPU and RAM usage using the new methods in the System class
+            system.update_resource_stats()  # Ensure latest resource stats are collected
+            mean_cpu_usage = system.get_mean_cpu_usage()
+            mean_ram_usage = system.get_mean_ram_usage()
+            
             # Collect metrics from this run
             all_metrics['blocking_ratios'].append(total_blocked / request_stats['generated'] if request_stats['generated'] > 0 else 0)
             all_metrics['waiting_requests'].append(avg_waiting_requests)
             all_metrics['effective_arrival_rates'].append(effective_arrival_rate)
             all_metrics['waiting_times'].append(avg_waiting_time)
+            all_metrics['mean_cpu_usage'].append(mean_cpu_usage)
+            all_metrics['mean_ram_usage'].append(mean_ram_usage)
             
             print(f"Completed run {rep+1}/{num_repetitions}")
         
@@ -240,7 +258,9 @@ class ModelComparison:
             'blocking_ratios': np.mean(all_metrics['blocking_ratios']),
             'waiting_requests': np.mean(all_metrics['waiting_requests']),
             'effective_arrival_rates': np.mean(all_metrics['effective_arrival_rates']),
-            'waiting_times': np.mean(all_metrics['waiting_times'])
+            'waiting_times': np.mean(all_metrics['waiting_times']),
+            'mean_cpu_usage': np.mean(all_metrics['mean_cpu_usage']),
+            'mean_ram_usage': np.mean(all_metrics['mean_ram_usage'])
         }
         
         # Also calculate standard deviations for reference
@@ -248,7 +268,9 @@ class ModelComparison:
             'blocking_ratios_std': np.std(all_metrics['blocking_ratios']),
             'waiting_requests_std': np.std(all_metrics['waiting_requests']),
             'effective_arrival_rates_std': np.std(all_metrics['effective_arrival_rates']),
-            'waiting_times_std': np.std(all_metrics['waiting_times'])
+            'waiting_times_std': np.std(all_metrics['waiting_times']),
+            'mean_cpu_usage_std': np.std(all_metrics['mean_cpu_usage']),
+            'mean_ram_usage_std': np.std(all_metrics['mean_ram_usage'])
         }
         
         print("Average simulator metrics:")
@@ -339,7 +361,8 @@ class ModelComparison:
             
             # Add individual metric comparisons
             for metric in ['blocking_ratios', 'waiting_requests', 
-                          'effective_arrival_rates', 'waiting_times']:
+                          'effective_arrival_rates', 'waiting_times',
+                          'mean_cpu_usage', 'mean_ram_usage']:
                 if metric in result['comparison']:
                     summary[f'{metric}_Markov'] = result['comparison'][metric]['markov_value']
                     summary[f'{metric}_Simulator'] = result['comparison'][metric]['simulator_value']
@@ -356,7 +379,41 @@ class ModelComparison:
         df.to_csv(csv_path, index=False)
         print(f"Results saved to {csv_path}")
         
+        # Calculate and display per-metric MAPE
+        self.calculate_per_metric_mape(df)
+        
         return df
+    
+    def calculate_per_metric_mape(self, results_df):
+        """
+        Calculate the Mean Absolute Percentage Error (MAPE) for each metric across all scenarios.
+        
+        Args:
+            results_df (pandas.DataFrame): DataFrame containing comparison results
+            
+        Returns:
+            dict: Dictionary of metrics and their average MAPE values
+        """
+        metrics = ['blocking_ratios', 'waiting_requests', 'effective_arrival_rates', 
+                   'waiting_times', 'mean_cpu_usage', 'mean_ram_usage']
+        
+        per_metric_mape = {}
+        print("\n=== Per-Metric MAPE Across All Scenarios ===")
+        
+        for metric in metrics:
+            ape_column = f'{metric}_APE'
+            if ape_column in results_df.columns:
+                avg_mape = results_df[ape_column].mean()
+                per_metric_mape[metric] = avg_mape
+                print(f"{metric}: {avg_mape:.2f}%")
+        
+        # Sort metrics by MAPE value for clearer presentation
+        sorted_metrics = sorted(per_metric_mape.items(), key=lambda x: x[1], reverse=True)
+        print("\n=== Metrics Ranked by MAPE (Highest to Lowest) ===")
+        for metric, mape in sorted_metrics:
+            print(f"{metric}: {mape:.2f}%")
+            
+        return per_metric_mape
     
     def generate_report(self, output_format='text'):
         """
@@ -382,7 +439,8 @@ class ModelComparison:
                 
                 report += "Metric Comparison:\n"
                 for metric in ['blocking_ratios', 'waiting_requests', 
-                              'effective_arrival_rates', 'waiting_times']:
+                              'effective_arrival_rates', 'waiting_times',
+                              'mean_cpu_usage', 'mean_ram_usage']:
                     if metric in result['comparison']:
                         comp = result['comparison'][metric]
                         report += f"  {metric}:\n"
@@ -407,11 +465,11 @@ if __name__ == "__main__":
     comparator = ModelComparison()
     
     # Define parameter ranges for random scenario generation
-    arrival_rate_range = [1, 10]          # Requests per second
-    service_rate_range = [0.5, 5]         # Service rate (requests per second)
-    spawn_rate_range = [1/10, 1/1]        # Container spawn rate (containers per second)
-    timeout_rate_range = [0.1, 2]         # Container timeout rate (timeouts per second)
-    num_servers_range = [1, 5]            # Number of servers
+    arrival_rate_range = [1, 20]          # Requests per second
+    service_rate_range = [0.5, 20]         # Service rate (requests per second)
+    spawn_rate_range = [1/20, 1/1]        # Container spawn rate (containers per second)
+    timeout_rate_range = [1/30, 1/2]         # Container timeout rate (timeouts per second)
+    num_servers_range = [1, 50]            # Number of servers
     # server_cpu_range = [50, 200]          # CPU capacity
     # server_ram_range = [50, 200]          # RAM capacity
     # sim_time_range = [500, 1500]          # Simulation time
@@ -424,12 +482,12 @@ if __name__ == "__main__":
     
     # Generate 10 random scenarios
     random.seed(123)  # Fixed seed for reproducibility
-    for i in range(10):
+    for i in range(1):
         # Randomly select parameters from defined ranges
-        arrival_rate = round(random.uniform(*arrival_rate_range), 1)
-        service_rate = round(random.uniform(*service_rate_range), 1)
-        spawn_rate = round(random.uniform(*spawn_rate_range), 1)
-        timeout_rate = round(random.uniform(*timeout_rate_range), 1)
+        arrival_rate = round(random.uniform(*arrival_rate_range), 3)
+        service_rate = round(random.uniform(*service_rate_range), 3)
+        spawn_rate = round(random.uniform(*spawn_rate_range), 3)
+        timeout_rate = round(random.uniform(*timeout_rate_range), 3)
         num_servers = random.randint(*num_servers_range)
         # server_cpu = random.randint(*server_cpu_range)
         # server_ram = random.randint(*server_ram_range)
@@ -445,8 +503,10 @@ if __name__ == "__main__":
         warm_percentage = random.uniform(0.1, 0.9)
         cpu_warm = int(cpu_demand * warm_percentage)
         ram_warm = int(ram_demand * warm_percentage)
-        
-        distribution = 'exponential'  # Fixed distribution for simplicity
+        transit_percentage = random.uniform(0.1, 0.9)
+        cpu_transit = int(cpu_demand * transit_percentage)
+        ram_transit = int(ram_demand * transit_percentage)
+        distribution = 'deterministic'  # Fixed distribution for simplicity
         
         # Create random scenario
         random_scenario = (
@@ -464,6 +524,8 @@ if __name__ == "__main__":
                 'ram_demand': ram_demand,
                 'cpu_warm': cpu_warm,
                 'ram_warm': ram_warm,
+                'cpu_transit': cpu_transit,
+                'ram_transit': ram_transit,
                 'random_seed': 42 + i,  # Different seed for each scenario
                 'distribution': distribution
             }

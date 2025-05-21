@@ -31,6 +31,9 @@ for i in range(config["system"]["num_servers"]):
 # Start the request generation process
 env.process(system.request_generator())
 
+# Start the resource monitoring process 
+env.process(system.resource_monitor_process())
+
 # Run the simulation
 print(f"\nStarting simulation with parameters:")
 print(f"- Arrival Rate (λ): {config['request']['arrival_rate']} req/s")
@@ -40,7 +43,8 @@ print(f"- Number of Servers: {config['system']['num_servers']}")
 # print(f"- RAM Demand: {RAM_DEMAND}") # Using the backward compatibility variable for display
 print(f"- Simulation Time: {config['system']['sim_time']}s")
 print(f"- Container Spawn Time: {config['container']['spawn_time']}s")
-print(f"- Container Idle Timeout: {config['container']['idle_timeout']}s\n")
+print(f"- Container Idle Timeout: {config['container']['idle_cpu_timeout']}s\n")
+print(f"- Model Idle Timeout: {config['container']['idle_model_timeout']}s\n")
 
 env.run(until=config["system"]["sim_time"])
 
@@ -82,11 +86,22 @@ if latency_stats['count'] > 0:
 # Calculate Little's Law metrics
 if system.env.now > 0:
     avg_waiting_count = system.total_waiting_area / system.env.now
+    avg_processing_count = system.get_mean_processing_count()
+    avg_system_count = system.get_mean_requests_in_system()
     effective_arrival_rate = request_stats['processed'] / system.env.now
     little_law_wait_time = avg_waiting_count / effective_arrival_rate if effective_arrival_rate > 0 else 0
     
     print("\n--- Queue Metrics ---")
     print(f"Average number of waiting requests: {avg_waiting_count:.2f}")
+    print(f"Average number of processing requests: {avg_processing_count:.2f}")
+    print(f"Average number of requests in system: {avg_system_count:.2f}")
     print(f"Effective arrival rate: {effective_arrival_rate:.2f} req/s")
     print(f"Little's Law predicted waiting time: {little_law_wait_time:.2f}s")
     print(f"Actual average waiting time from measurements: {avg_wait:.2f}s")
+
+# Print resource utilization statistics
+mean_cpu_usage = system.get_mean_cpu_usage()
+mean_ram_usage = system.get_mean_ram_usage()
+print("\n--- Resource Utilization ---")
+print(f"Mean CPU Usage: {mean_cpu_usage:.4f}%")
+print(f"Mean RAM Usage: {mean_ram_usage:.4f}%")

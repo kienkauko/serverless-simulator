@@ -20,12 +20,9 @@ class MarkovModel():
         # print(config)
         self._lam = config["lam"]
         self._mu = config["mu"]
-        self._alpha = config["alpha"]
-        self._beta = config["beta"]
-        self._theta = config["theta"]
-        # self._segments_per_video = config["segments_per_video"]
-        # self._preload_segments_per_video = config["preload_segments_per_video"]
-        self._max_queue = config["max_queue"]
+        self._alpha = 1/(1/config["spawn_rate"] + 1/config["mu"])
+        self._max_queue_warm = config["queue_warm"]
+        self._max_queue_cold = config["queue_cold"]
         self._ram_warm = config["ram_warm"]
         self._cpu_warm = config["cpu_warm"]
         self._ram_active = config["ram_demand"]
@@ -41,7 +38,7 @@ class MarkovModel():
             print("Markov: Computing probabilities...")
         self.compute_state_probabilities()
 
-    def build_graph(self, color_lam = "blue", color_mu = "black", color_alpha = "green", color_beta = "red", color_theta = "brown"):
+    def build_graph(self, color_lam = "blue", color_mu = "black", color_alpha = "green"):
         G = nx.DiGraph()
         edge_labels={}
         edge_cols = {}
@@ -60,74 +57,49 @@ class MarkovModel():
             waiting.append(state)
             return waiting
         
-        waiting = [(0,0,0)]
+        waiting = [(0,0)]
         visited = []
         string_lambda = '$\lambda$'
-        # string_mu = "$\mu$"
+        string_mu = "$\mu$"
         string_alpha = "$\\alpha$"
-        string_beta = "$\\beta$"
-        string_theta = "$\\theta$"
-        # string_mix = "$\mu + \\theta$"
 
         while len(waiting)>0:
             next_alpha_state = None
-            next_beta_state = None
             next_lambda_state = None
             next_mu_state = None
-            next_theta_state = None
-            # print(f"Waiting: aaaaaa")
             current_state = waiting.pop(0)
             visited.append(current_state)
             
-            # IDENTIFY NEXT Pending state
-            if current_state[0] + current_state[1] + current_state[2] < self._max_queue \
-                and current_state[2] == 0:
-                next_lambda_state = (current_state[0]+1, 
-                                     current_state[1], 
-                                     current_state[2])
+            # IDENTIFY NEXT Warm state
+            if current_state[0]  < self._max_queue_warm:
+                next_lambda_state = (current_state[0]+1, current_state[1])
             else:
                 next_lambda_state = current_state  # loops are not added
 
+            # IDENTIFY NEXT Cold state
+            if current_state[1] < self._max_queue_cold and current_state[0] == self._max_queue_warm:
+                next_lambda_state = (current_state[0], current_state[1] + 1)
             
-            # IDENTIFY next active state
-            if current_state[0] > 0:
-                next_alpha_state = (current_state[0] - 1, current_state[1] + 1, current_state[2]) 
-            # IDENTIFY END OF SERVING STATE
+            # IDENTIFY next alpha state (cold removal)
             if current_state[1] > 0:
-                next_mu_state = (current_state[0], current_state[1] - 1, current_state[2] + 1)
-               
-            # INDENTIFY idle encourter state
-            if current_state[2] > 0:
-                next_beta_state = (current_state[0], current_state[1] + 1, current_state[2] - 1)
+                next_alpha_state = (current_state[0], current_state[1] - 1)
             
-            # INDENTIFY CONTAINER TIMEOUT STATE
-            if current_state[2] > 0:
-                next_theta_state = (current_state[0], current_state[1], current_state[2] - 1)
-                # print("current_state:", current_state)
-                # print("next_theta_state:", next_theta_state)
-            
+            # Identify next mu state (warm removal)
+            if current_state[0] > 0:
+                next_mu_state = (current_state[0] - 1, current_state[1])
                 
             # ADD NEW STATES TO GRAPH
-            add_transition(current_state, next_lambda_state, rate=self._lam, string=string_lambda, color=color_lam)
-            waiting = add_state(visited, waiting, next_lambda_state)
+            if next_lambda_state:
+                add_transition(current_state, next_lambda_state, rate=self._lam, string=string_lambda, color=color_lam)
+                waiting = add_state(visited, waiting, next_lambda_state)
 
             if next_alpha_state:
-                string_alpha = f"{current_state[0]}$\\alpha$"
-                # print("current_state:", current_state)
-                # print("alpha:", selstring_alpha)
+                string_alpha = f"{current_state[1]}$\\alpha$"
                 add_transition(current_state, next_alpha_state, rate=current_state[0]*self._alpha, string=string_alpha, color=color_alpha)
                 waiting = add_state(visited, waiting, next_alpha_state)
-            if next_beta_state:
-                # coe = min(current_state[0], current_state[1])
-                string_beta = f"$\\beta$"
-                add_transition(current_state, next_beta_state, rate=self._beta, string=string_beta, color=color_beta)
-                waiting = add_state(visited, waiting, next_beta_state)        
-            if next_theta_state:
-                string_theta = f"{current_state[2]}$\\theta$"
-                add_transition(current_state, next_theta_state, rate=current_state[2]*self._theta, string=string_theta, color=color_theta)
-                waiting = add_state(visited, waiting, next_theta_state)
+
             if next_mu_state:
-                string_mu = f"{current_state[1]}$\\mu$"
+                string_mu = f"{current_state[0]}$\\mu$"
                 add_transition(current_state, next_mu_state, rate=current_state[1]*self._mu, string=string_mu, color=color_mu)
                 waiting = add_state(visited, waiting, next_mu_state)        
             # ADD NEW STATES TO QUEUE
@@ -137,10 +109,9 @@ class MarkovModel():
         G.labels = list(G.nodes)
         G.edge_labels = edge_labels
         G.edge_cols = edge_cols
-        G.max_queue = self._max_queue
+        G.max_queue = max(self._max_queue_warm, self._max_queue_cold)
+        G.alpha = self._alpha
         G.lam = self._lam
-        G.mu = self._mu
-        G.theta = self._theta
         G.mu = self._mu
         
         return G
@@ -168,8 +139,9 @@ class MarkovModel():
         
         # Generate a matrix with P(X,Y)
         # max_segments = self._segments_per_video + self._max_preload_segments
-        matrix = np.zeros((self._max_queue+1, self._max_queue+1, self._max_queue+1))
-        matrix[0,0,0] = X[ n2i[0,0,0] ]
+        max_queue = max(self._max_queue_warm, self._max_queue_cold)
+        matrix = np.zeros((self._max_queue_warm + 1, self._max_queue_cold + 1))
+        matrix[0,0] = X[ n2i[0,0] ]
         for s in list(n2i.keys()):
             matrix[s] = X[ n2i[s] ] 
     
@@ -239,17 +211,15 @@ class MarkovModel():
     def _get_blocking_states(self):
         blocking_states = []
         for s in self._n2i:
-            if s[0] + s[1] == self._max_queue:
+            if s[0] == self._max_queue_warm and s[1] == self._max_queue_cold:
                 blocking_states.append(s)
         return blocking_states
 
     def _compute_blocking_ratio(self):
         return np.sum([self._state_probabilities[s] for s in self._get_blocking_states()])
     
-    def _compute_waiting_requests(self):
-        return np.sum([s[0]*self._state_probabilities[s] for s in self._n2i])
-    # def _get_initial_delay_states(self):
-    #     return [(0,0,0)]
+    def _compute_requests_in_system(self):
+        return np.sum([(s[0] + s[1])*self._state_probabilities[s] for s in self._n2i])
     
     def _compute_processing_requests(self):
         return np.sum([s[1]*self._state_probabilities[s] for s in self._n2i])
@@ -257,11 +227,38 @@ class MarkovModel():
     def _compute_idling_requests(self):
         return np.sum([s[2]*self._state_probabilities[s] for s in self._n2i])
     
+    def _compute_warm_job(self):
+        return np.sum([s[0]*self._state_probabilities[s] for s in self._n2i])
+    
+    def _compute_cold_job(self):
+        return np.sum([s[1]*self._state_probabilities[s] for s in self._n2i])
+    
+    def _compute_resource_usage(self, resource):
+        if resource == "cpu":
+            active = self._cpu_active
+            warm = self._cpu_warm
+            transit = 3.0
+        elif resource == "ram":
+            active = self._ram_active
+            warm = self._ram_warm
+            transit = warm
+        else:
+            raise ValueError("Resource must be either 'cpu' or 'ram'")
+        
+        spawn_time = 1/config["spawn_rate"]
+        serving_time = 1/config["mu"]
+
+        mean_cold_consume = (spawn_time*transit + serving_time*active)/(spawn_time + serving_time)
+
+        resource = self._max_queue_warm*warm + self._compute_warm_job()*(active-warm) \
+            + self._compute_cold_job()*mean_cold_consume
+        
+        return resource
 
     def _compute_effective_arrival_rate(self, block_ratio):
         return self._lam*( 1 - block_ratio)
     
-    def _compute_waiting_time(self, waiting_requests, effective_arrival_rate):
+    def _compute_latency(self, waiting_requests, effective_arrival_rate):
         # apply Little Law here
         return waiting_requests/effective_arrival_rate
     
@@ -328,28 +325,33 @@ class MarkovModel():
             print("Markov: Collecting metrics...")
         
         block_ratio = self._compute_blocking_ratio()
-        waiting_requests = self._compute_waiting_requests()
-        processing_requests = self._compute_processing_requests()
-        idling_requests = self._compute_idling_requests()
-        total_requests = waiting_requests + processing_requests 
+        requests_in_system = self._compute_requests_in_system()
+        # processing_requests = self._compute_processing_requests()
+        # idling_requests = self._compute_idling_requests()
+        # total_requests = waiting_requests + processing_requests 
         effective_arrival_rate = self._compute_effective_arrival_rate(block_ratio)
-        waiting_time = self._compute_waiting_time(waiting_requests, effective_arrival_rate)
-        cpu_usage = self._compute_cpu_usage()
-        ram_usage = self._compute_ram_usage()
-        cpu_usage_per_request = cpu_usage/total_requests
-        ram_usage_per_request = ram_usage/total_requests
+        latency = self._compute_latency(requests_in_system, effective_arrival_rate)
+        cpu_usage = self._compute_resource_usage("cpu")
+        ram_usage = self._compute_resource_usage("ram")
+        # cpu_usage = self._compute_cpu_usage()
+        # ram_usage = self._compute_ram_usage()
+        # cpu_usage_per_request = cpu_usage/total_requests
+        # ram_usage_per_request = ram_usage/total_requests
 
         return {
             "blocking_ratios": [block_ratio],
-            "waiting_requests": [waiting_requests],
-            "processing_requests": [processing_requests],
-            "idling_requests": [idling_requests],
-            "effective_arrival_rates": [effective_arrival_rate],
-            "waiting_times": [waiting_time],
-            'mean_cpu_usage': [cpu_usage],
-            'mean_ram_usage': [ram_usage],
-            'mean_cpu_usage_per_request': [cpu_usage_per_request],
-            'mean_ram_usage_per_request': [ram_usage_per_request],
+            "requests_in_system": [requests_in_system],
+            "latency": [latency],
+            "cpu_usage": [cpu_usage],
+            "ram_usage": [ram_usage],
+            # "processing_requests": [processing_requests],
+            # "idling_requests": [idling_requests],
+            # "effective_arrival_rates": [effective_arrival_rate],
+            # "waiting_times": [waiting_time],
+            # 'mean_cpu_usage': [cpu_usage],
+            # 'mean_ram_usage': [ram_usage],
+            # 'mean_cpu_usage_per_request': [cpu_usage_per_request],
+            # 'mean_ram_usage_per_request': [ram_usage_per_request],
             # "states": [self._get_state_probabilities()]
             # "stalling_ratios": [self._compute_stalling_ratio()],
             # "average_stalling_durations": [self._compute_average_stalling_duration()],
@@ -365,63 +367,30 @@ class MarkovModel():
         }
     
 
-def draw_graph_updated(G, node_size=1500, rad=-0.2, scale_x=0.5, scale_y=1.0, k_offset_x=0.25, k_offset_y=2.0):
-    """
-    Draws the state transition diagram described by the NetworkX graph G.
-    States are expected to be tuples (i, j, k) where i, j, k >= 0.
-    - Increasing 'i' moves nodes horizontally to the right: (0,0,0) -> (1,0,0) -> (2,0,0)
-    - Decreasing 'i' while increasing 'j' moves nodes vertically down: (1,0,0) -> (0,1,0), (2,0,0) -> (1,1,0) -> (0,2,0)
-    - Decreasing 'j' while increasing 'k' moves nodes diagonally: (0,1,0) -> (0,0,1)
-
-    Args:
-        G (networkx.DiGraph): State transition graph. Nodes MUST be tuples (i, j, k).
-                              Assumes G might have attributes G.labels, G.edge_labels, G.edge_cols.
-                              If not present, defaults will be used.
-        node_size (int): Size of a node in the diagram.
-        rad (float): Curvature of the edges (for arc3 connectionstyle).
-        scale_x (float): Base spacing between nodes along the i-axis (horizontal).
-        scale_y (float): Base spacing between nodes along the j-axis (vertical).
-        k_offset_x (float): Horizontal offset added per unit increase in k.
-        k_offset_y (float): Vertical offset added per unit increase in k.
-    """
-
+def draw_graph_updated(G, node_size=1500, rad=-0.2, scale_x=0.5, scale_y=1.0):
     # --- 1. Calculate Node Positions ---
     pos = {}
     for node in G.nodes():
-        if isinstance(node, tuple) and len(node) == 3:
+        if isinstance(node, tuple) and len(node) == 2:
             try:
                 # Ensure components are numeric and non-negative
-                i, j, k = map(float, node) # Convert to float for calculation
-                print(f"Node {node} has components: i={i}, j={j}, k={k}")
-                if not (i >= 0 and j >= 0 and k >= 0):
+                i, j = map(float, node)  # Convert to float for calculation
+                if not (i >= 0 and j >= 0):
                     raise ValueError("Components must be non-negative")
             except (ValueError, TypeError):
                 print(f"Warning: Node {node} has invalid or non-numeric components. Skipping positioning.")
-                pos[node] = (0, 0) # Assign default position
+                pos[node] = (0, 0)  # Assign default position
                 continue
-
-            # Calculate position based on the requirements:
-            # - i increases -> horizontal movement
-            # - j increases (with i decreasing) -> vertical movement
-            # - k increases (with j decreasing) -> diagonal movement
-            
-            # Base horizontal position from i
-
-            x = scale_x * (i+j)
-            
-            # Base vertical position from j
-
+                
+            # Position nodes in a 2D grid where:
+            # x increases with i (horizontally)
+            # y decreases with j (vertically downward)
+            x = scale_x * i
             y = -scale_y * j  # Negative to move downward
-            
-            # Apply k offset for diagonal movement
-            x += k * k_offset_x
-            y -= k * k_offset_y  # Further down and to the right
-            # if k > 0:
-            #     y -= k*2
             pos[node] = (x, y)
         else:
-            # Handle nodes not in the expected (i, j, k) tuple format
-            print(f"Warning: Node '{node}' is not in (i, j, k) format. Placing at (0,0).")
+            # Handle nodes not in the expected (i, j) tuple format
+            print(f"Warning: Node '{node}' is not in (i, j) format. Placing at (0,0).")
             pos[node] = (0, 0)
 
     # --- 2. Prepare for Drawing ---
@@ -621,25 +590,21 @@ def my_draw_networkx_edge_labels(
 
 if __name__=="__main__":
     config = {
-        "lam": 14.7,
-        "mu": 2,
-        "alpha": 0.8,
-        "beta": 14.7,
-        "theta": 0.0,
-        # "segments_per_video": 3,
-        # "preload_segments_per_video": 1,
-        "max_queue": 3, # queue
+        "lam": 10,
+        "mu": 1,
+        "spawn_rate": 1/4,
+        "queue_warm": 10, # queue
+        "queue_cold": 10, # queue
         "serving_time": "exponential",
         "arrivals": "exponential",
         # "lam_factor": 1,
-        "simulation_duration": 1000,
-        "ram_warm": 6,
-        "cpu_warm": 2,
-        "ram_demand": 56,
-        "cpu_demand": 21,
+        "ram_warm": 30,
+        "cpu_warm": 1,
+        "ram_demand": 40,
+        "cpu_demand": 50,
         "num_runs": 1
     }
     m = MarkovModel(config, verbose=False)
     G = m._G
-    draw_graph_updated(G, node_size=1000)
+    # draw_graph_updated(G, node_size=1000)
     print(m.get_metrics())

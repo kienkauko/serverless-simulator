@@ -23,11 +23,15 @@ class MarkovModel():
         self._alpha = config["alpha"]
         self._beta = config["beta"]
         self._theta = config["theta"]
+        self._gamma = config["gamma"]
+        self._sigma = self._lam*config["sigma"]/(config["sigma"]+self._lam)
         # self._segments_per_video = config["segments_per_video"]
         # self._preload_segments_per_video = config["preload_segments_per_video"]
         self._max_queue = config["max_queue"]
-        self._ram_warm = config["ram_warm"]
-        self._cpu_warm = config["cpu_warm"]
+        self._cpu_warm_cpu = config["cpu_warm_cpu"]
+        self._ram_warm_cpu = config["ram_warm_cpu"]
+        self._cpu_warm_model = config["cpu_warm_model"]
+        self._ram_warm_model = config["ram_warm_model"]
         self._ram_active = config["ram_demand"]
         self._cpu_active = config["cpu_demand"]
         # self._preload_videos = self._max_preload_segments / self._preload_segments_per_video
@@ -41,7 +45,7 @@ class MarkovModel():
             print("Markov: Computing probabilities...")
         self.compute_state_probabilities()
 
-    def build_graph(self, color_lam = "blue", color_mu = "black", color_alpha = "green", color_beta = "red", color_theta = "brown"):
+    def build_graph(self, color_lam = "blue", color_mu = "purple", color_alpha = "orange", color_beta = "yellow", color_gamma = "green", color_sigma = "black", color_theta = "cyan"):
         G = nx.DiGraph()
         edge_labels={}
         edge_cols = {}
@@ -60,7 +64,7 @@ class MarkovModel():
             waiting.append(state)
             return waiting
         
-        waiting = [(0,0,0)]
+        waiting = [(0,0,0,0)]
         visited = []
         string_lambda = '$\lambda$'
         # string_mu = "$\mu$"
@@ -75,34 +79,42 @@ class MarkovModel():
             next_lambda_state = None
             next_mu_state = None
             next_theta_state = None
+            next_gamma_state = None
+            next_sigma_state = None
             # print(f"Waiting: aaaaaa")
             current_state = waiting.pop(0)
             visited.append(current_state)
-            
+            print(f"Current state: {current_state}")
             # IDENTIFY NEXT Pending state
-            if current_state[0] + current_state[1] + current_state[2] < self._max_queue \
-                and current_state[2] == 0:
+            if current_state[0] + current_state[1] + current_state[2] + current_state[3] < self._max_queue \
+                and current_state[2] == 0 and  current_state[3] == 0:
                 next_lambda_state = (current_state[0]+1, 
                                      current_state[1], 
-                                     current_state[2])
+                                     current_state[2], current_state[3])
             else:
                 next_lambda_state = current_state  # loops are not added
 
             
             # IDENTIFY next active state
             if current_state[0] > 0:
-                next_alpha_state = (current_state[0] - 1, current_state[1] + 1, current_state[2]) 
+                next_alpha_state = (current_state[0] - 1, current_state[1] + 1, current_state[2], current_state[3]) 
             # IDENTIFY END OF SERVING STATE
             if current_state[1] > 0:
-                next_mu_state = (current_state[0], current_state[1] - 1, current_state[2] + 1)
-               
+                next_mu_state = (current_state[0], current_state[1] - 1, current_state[2] + 1, current_state[3])
+            
+            # IDENTIFY MODEL DECAY STATE
+            if current_state[2] > 0:
+                next_gamma_state = (current_state[0], current_state[1], current_state[2] - 1, current_state[3] + 1)
+                # print("current_state:", current_state)
+                # print("next_mu_state:", next_mu_state)
             # INDENTIFY idle encourter state
             if current_state[2] > 0:
-                next_beta_state = (current_state[0], current_state[1] + 1, current_state[2] - 1)
-            
+                next_beta_state = (current_state[0], current_state[1] + 1, current_state[2] - 1, current_state[3])
+            if current_state[3] > 0:
+                next_sigma_state = (current_state[0], current_state[1] + 1, current_state[2], current_state[3] - 1)
             # INDENTIFY CONTAINER TIMEOUT STATE
-            if current_state[2] > 0:
-                next_theta_state = (current_state[0], current_state[1], current_state[2] - 1)
+            if current_state[3] > 0:
+                next_theta_state = (current_state[0], current_state[1], current_state[2], current_state[3] - 1)
                 # print("current_state:", current_state)
                 # print("next_theta_state:", next_theta_state)
             
@@ -129,7 +141,15 @@ class MarkovModel():
             if next_mu_state:
                 string_mu = f"{current_state[1]}$\\mu$"
                 add_transition(current_state, next_mu_state, rate=current_state[1]*self._mu, string=string_mu, color=color_mu)
-                waiting = add_state(visited, waiting, next_mu_state)        
+                waiting = add_state(visited, waiting, next_mu_state)    
+            if next_gamma_state:
+                string_gamma = f"{current_state[2]}$\\gamma$"
+                add_transition(current_state, next_gamma_state, rate=current_state[2]*self._gamma, string=string_gamma, color=color_gamma)
+                waiting = add_state(visited, waiting, next_gamma_state)
+            if next_sigma_state:
+                string_sigma = f"$\\sigma$"
+                add_transition(current_state, next_sigma_state, rate=self._sigma, string=string_sigma, color=color_sigma)
+                waiting = add_state(visited, waiting, next_sigma_state)    
             # ADD NEW STATES TO QUEUE
                 
         # store the parameters in the graph for drawing
@@ -168,8 +188,8 @@ class MarkovModel():
         
         # Generate a matrix with P(X,Y)
         # max_segments = self._segments_per_video + self._max_preload_segments
-        matrix = np.zeros((self._max_queue+1, self._max_queue+1, self._max_queue+1))
-        matrix[0,0,0] = X[ n2i[0,0,0] ]
+        matrix = np.zeros((self._max_queue+1, self._max_queue+1, self._max_queue+1, self._max_queue+1))
+        matrix[0,0,0,0] = X[ n2i[0,0,0,0] ]
         for s in list(n2i.keys()):
             matrix[s] = X[ n2i[s] ] 
     
@@ -388,40 +408,49 @@ def draw_graph_updated(G, node_size=1500, rad=-0.2, scale_x=0.5, scale_y=1.0, k_
     # --- 1. Calculate Node Positions ---
     pos = {}
     for node in G.nodes():
-        if isinstance(node, tuple) and len(node) == 3:
+        if isinstance(node, tuple) and (len(node) == 4 or len(node) == 3):
             try:
-                # Ensure components are numeric and non-negative
-                i, j, k = map(float, node) # Convert to float for calculation
-                print(f"Node {node} has components: i={i}, j={j}, k={k}")
-                if not (i >= 0 and j >= 0 and k >= 0):
-                    raise ValueError("Components must be non-negative")
+                # Handle both 4D (i,j,k,l) and 3D (i,j,k) nodes
+                if len(node) == 4:
+                    i, j, k, l = map(float, node)  # Convert to float for calculation
+                    print(f"Node {node} has components: i={i}, j={j}, k={k}, l={l}")
+                    if not (i >= 0 and j >= 0 and k >= 0 and l >= 0):
+                        raise ValueError("Components must be non-negative")
+                else:  # len(node) == 3
+                    i, j, k = map(float, node)
+                    l = 0  # Set l=0 for backward compatibility
+                    print(f"Node {node} has components: i={i}, j={j}, k={k}")
+                    if not (i >= 0 and j >= 0 and k >= 0):
+                        raise ValueError("Components must be non-negative")
             except (ValueError, TypeError):
                 print(f"Warning: Node {node} has invalid or non-numeric components. Skipping positioning.")
-                pos[node] = (0, 0) # Assign default position
+                pos[node] = (0, 0)  # Assign default position
                 continue
 
-            # Calculate position based on the requirements:
-            # - i increases -> horizontal movement
-            # - j increases (with i decreasing) -> vertical movement
-            # - k increases (with j decreasing) -> diagonal movement
+            # Calculate position based on the 4D model requirements:
+            # - i represents waiting requests (horizontal)
+            # - j represents processing requests (vertical)
+            # - k represents warm containers (diagonal down-right)
+            # - l represents cold containers (diagonal down-left)
             
-            # Base horizontal position from i
-
-            x = scale_x * (i+j)
+            # Base horizontal position from i and j
+            x = scale_x * (i + j)
             
             # Base vertical position from j
-
             y = -scale_y * j  # Negative to move downward
             
-            # Apply k offset for diagonal movement
+            # Apply k offset (warm containers) - down-right diagonal 
             x += k * k_offset_x
-            y -= k * k_offset_y  # Further down and to the right
-            # if k > 0:
-            #     y -= k*2
+            y -= k * k_offset_y
+            
+            # Apply l offset (cold containers) - down-left diagonal
+            x -= l * k_offset_x * 0.8  # Using same offset scale but in opposite direction
+            y -= l * k_offset_y * 1.2  # Slightly more vertical offset for better visualization
+            
             pos[node] = (x, y)
         else:
-            # Handle nodes not in the expected (i, j, k) tuple format
-            print(f"Warning: Node '{node}' is not in (i, j, k) format. Placing at (0,0).")
+            # Handle nodes not in the expected tuple format
+            print(f"Warning: Node '{node}' is not in (i,j,k,l) or (i,j,k) format. Placing at (0,0).")
             pos[node] = (0, 0)
 
     # --- 2. Prepare for Drawing ---
@@ -621,14 +650,16 @@ def my_draw_networkx_edge_labels(
 
 if __name__=="__main__":
     config = {
-        "lam": 14.7,
+        "lam": 10,
         "mu": 2,
         "alpha": 0.8,
-        "beta": 14.7,
-        "theta": 0.0,
+        "beta": 10,
+        "theta": 0.1,
+        "gamma": 0.25,
+        "sigma": 8,
         # "segments_per_video": 3,
         # "preload_segments_per_video": 1,
-        "max_queue": 3, # queue
+        "max_queue": 2, # queue
         "serving_time": "exponential",
         "arrivals": "exponential",
         # "lam_factor": 1,
