@@ -12,26 +12,22 @@ class System:
         self.env = env
         self.servers = []  # Direct list of servers
         # self.idle_containers = simpy.Store(env)
-        self.idle_model_containers = simpy.Store(env)
-        self.idle_cpu_containers = simpy.Store(env)
+        self.idle_containers = []
         self.config = config
+        # Warm number of containers
+        self.warm_queue = 0
+        self.max_warm_queue = self.calculate_warm_number(config) # Percentage of warm containers
+        print(f"Warm queue size: {self.max_warm_queue}")
         self.arrival_rate = config["request"]["arrival_rate"]
         self.service_rate = config["request"]["service_rate"]
         self.spawn_container_time_mean = config["container"]["spawn_time"]
-        self.load_request_time_mean = config["container"]["load_request_time"]
-        self.load_model_time_mean = config["container"]["load_model_time"]
-        self.container_idle_model_timeout = config["container"]["idle_model_timeout"]
-        self.container_idle_cpu_timeout = config["container"]["idle_cpu_timeout"]
         self.distribution = distribution  # Added parameter for distribution type
         self.pattern_type = pattern_type  # Traffic pattern type: 'poisson' or 'day_night'
         self.verbose = verbose  # Flag to control logging output
         self.req_id_counter = itertools.count()
         
-        # Day-night pattern parameters
-        self.day_length = 24.0  # Length of a day in simulation time units
-        self.peak_factor = 2.0  # Peak traffic is 2x the configured arrival rate
-        self.trough_factor = 0.5  # Trough traffic is 0.5x the configured arrival rate
-        self.peak_hour = 12.0  # Peak occurs at noon in simulation time
+
+        
         
         # Variables for tracking waiting requests
         self.waiting_requests_count = 0
@@ -49,13 +45,77 @@ class System:
         self.total_cpu_capacity = 0.0  # Total CPU capacity of all servers
         self.total_ram_capacity = 0.0  # Total RAM capacity of all servers
         
+        self. total_energy_usage = 0.0  # Total energy usage across all servers
         # New variable to track detailed request information
         self.request_records = []  # List to store detailed information about each request
         
         # New variable to track resource consumption over time
         self.resource_history = []  # List to store snapshots of resource usage
         self.last_resource_snapshot = 0.0  # Time of the last resource snapshot
+
+        # Statistics
+        self.request_stats = {
+            'generated': 0,
+            'processed': 0,
+            'blocked_no_server_capacity': 0, # Blocked because no server could *ever* fit it
+            'blocked_spawn_failed': 0,      # Blocked because spawning failed (transient lack of resources)
+            'blocked_no_path': 0,  # New: rejected due to no routing path with available bandwidth
+            'container_spawns_initiated': 0,
+            'container_spawns_failed': 0,
+            'container_spawns_succeeded': 0,
+            'containers_reused': 0,
+            'containers_removed_idle': 0,
+            'reuse_oom_failures': 0, # Out Of Memory/CPU when trying to activate reused container
+        }
+
+        # New dictionary to track latency metrics (in time units)
+        self.latency_stats = {
+            'total_latency': 0.0,
+            'spawning_time': 0.0,
+            'processing_time': 0.0,
+            'waiting_time': 0.0,      # Total waiting time (container wait + assignment)
+            'container_wait_time': 0.0, # Time waiting for an idle container
+            'assignment_time': 0.0,   # Time for the assignment process
+            'count': 0
+        }
     
+    def calculate_warm_number(self, config):
+        warm_percent = config["system"]["warm_percent"]
+        num_servers = config["system"]["num_servers"]
+        ram_active = config["request"]["ram_demand"]
+        cpu_active = config["request"]["cpu_demand"]
+        resource = max(ram_active, cpu_active)
+        max_number_containers = math.floor(100/resource)*num_servers
+        return int(max_number_containers*warm_percent)
+    
+    def pre_warm(self):
+        print(f"Pre-warming {self.max_warm_queue} containers")
+        request = Request(1111, 22222, self.config["request"])
+
+        while len(self.idle_containers) < self.max_warm_queue:
+            server = self.find_server_for_spawn(request.resource_info)
+            if server:
+                # Resources available, spawn new container for this request
+                if self.verbose:
+                    print(f"{self.env.now:.2f} - Resources available on {server}. Spawning container for request {request}.")
+                self.request_stats['container_spawns_initiated'] += 1
+                self.request_pending += 1  # Increment pending requests
+                request.state = "Pending"  # Update request state to Pending
+                # Spawn the container and wait for completion
+                spawn_process = self.env.process(self.spawn_container_process(server, request))
+                spawned_container = yield spawn_process
+                if spawned_container:
+                    self.idle_containers.append(spawned_container)
+                    server.containers.append(spawned_container) # Track container on server
+                else:
+                    # Container spawn failed
+                    print(f"{self.env.now:.2f} - FATAL ERROR: Container spawn failed on {server}.")
+                    exit(1)
+            else:
+                print(f"{self.env.now:.2f} - FATAL ERROR: No server has enough resources for pre-warming.")
+                exit(1)
+        print(f"Pre-warming complete. {len(self.idle_containers)} containers are now idle.")
+
     def add_server(self, server):
         """Add a server to the system"""
         self.servers.append(server)
@@ -73,13 +133,7 @@ class System:
         """
         while True:
             # Get the appropriate arrival rate based on pattern type
-            if self.pattern_type == 'day_night':
-                current_arrival_rate = self.calculate_day_night_arrival_rate()
-            elif self.pattern_type == 'up_down':
-                current_arrival_rate = self.calculate_up_down_arrival_rate()
-            else:  # default to poisson
-                current_arrival_rate = self.arrival_rate
-                
+            current_arrival_rate = self.arrival_rate     
             # Calculate inter-arrival time using the determined rate
             inter_arrival_time = random.expovariate(current_arrival_rate)
             yield self.env.timeout(inter_arrival_time)
@@ -91,7 +145,7 @@ class System:
             # Get fixed CPU and RAM values from config
             resource_demand = self.config["request"]
             request = Request(req_id, arrival_time, resource_demand)
-            request_stats['generated'] += 1
+            self.request_stats['generated'] += 1
             if self.verbose:
                 print(f"{self.env.now:.2f} - Request Generated: {request}")
             # Start the handling process for this request
@@ -103,49 +157,34 @@ class System:
         # Record the time when the request starts waiting for a container
         request_wait_start_time = self.env.now
         self.increment_waiting()  # Track waiting requests
-        
-        # Try to reuse idle containers: model‐first, then CPU
         # See if there's any Idle_model container
-        if any(c.state == "Idle_model" for c in self.idle_model_containers.items):
-            store = self.idle_model_containers
-            state_label = "Idle_model"
-        # Otherwise, see if there's any Idle_cpu container
-        elif any(c.state == "Idle_cpu" for c in self.idle_cpu_containers.items):
-            store = self.idle_cpu_containers
-            state_label = "Idle_cpu"
-        else:
-            store = None
+        chosen_container = None
+        for container in self.idle_containers:
+            if container.state == "Idle":
+                chosen_container = container
+                break
 
-        if store:
+        if chosen_container:
             if self.verbose:
-                print(f"{self.env.now:.2f} - Found idle {state_label} containers, trying to assign request directly.")
+                print(f"{self.env.now:.2f} - Found idle containers, trying to assign request directly.")
             # Pull containers until we find one in the right idle state
-            while True:
-                container = yield store.get()
-                if container.state != state_label:
-                    if self.verbose:
-                        print(f"{self.env.now:.2f} - WARNING: Retrieved {container} ({container.state}), discarding.")
-                    continue
-                # assign the request
-                request_stats['containers_reused'] += 1
-                container.assignment_process = self.env.process(container.assign_request(request))
-                assignment_ok = yield container.assignment_process
-                container.assignment_process = None
-                if not assignment_ok:
-                    print(f"{self.env.now:.2f} - FATAL ERROR: Assignment to {container} failed.")
-                    exit(1)
-                # record wait time
-                total_wait = self.env.now - request_wait_start_time
-                request.wait_time = total_wait
-                self.decrement_waiting()
-                # Only update latency statistics when system is stable
-                if self.env.now > 200:
-                    latency_stats['waiting_time'] += total_wait
-                if self.verbose:
-                    print(f"{self.env.now:.2f} - {request} waited {total_wait:.2f}")
-                # start service
-                self.env.process(self.container_service_lifecycle(container))
-                return
+           
+            assignment_ok = container.assign_request(request)
+            if not assignment_ok:
+                print(f"{self.env.now:.2f} - FATAL ERROR: Assignment to {container} failed.")
+                exit(1)
+            # record wait time
+            total_wait = self.env.now - request_wait_start_time
+            request.wait_time = total_wait
+            self.decrement_waiting()
+            # Only update latency statistics when system is stable
+            if self.env.now > 0:
+                self.latency_stats['waiting_time'] += total_wait
+            if self.verbose:
+                print(f"{self.env.now:.2f} - {request} waited {total_wait:.2f}")
+            # start service
+            self.env.process(self.container_service_lifecycle(container))
+            return
 
         # if no idle_model or idle_cpu containers found, execution will fall through
         # to the “spawn new container” branch below
@@ -153,44 +192,32 @@ class System:
             # No idle containers available, check if we can spawn a new one
             if self.verbose:
                 print(f"{self.env.now:.2f} - No idle containers available. Checking resources for spawning.")
-            server = self.find_server_for_spawn(request)
+            server = self.find_server_for_spawn(request.resource_info)
             
             if server:
                 # Resources available, spawn new container for this request
                 if self.verbose:
                     print(f"{self.env.now:.2f} - Resources available on {server}. Spawning container for request {request}.")
-                request_stats['container_spawns_initiated'] += 1
-                self.request_pending += 1  # Increment pending requests
-                request.state = "Pending"  # Update request state to Pending
-                
+                self.request_stats['container_spawns_initiated'] += 1                
                 # Spawn the container and wait for completion
                 spawn_process = self.env.process(self.spawn_container_process(server, request))
                 spawned_container = yield spawn_process
                 
                 if spawned_container:
                     # Container spawned successfully, assign the request directly
-                    request_stats['container_spawns_succeeded'] += 1
-                    
+                    self.request_stats['container_spawns_succeeded'] += 1
                     # Start the assignment process
-                    spawned_container.assignment_process = self.env.process(spawned_container.assign_request(request))
-                    assignment_result = yield spawned_container.assignment_process
-                    spawned_container.assignment_process = None
-                    
+                    assignment_result = spawned_container.assign_request(request)
                     if assignment_result:
                         # Calculate waiting time
                         total_wait_time = self.env.now - request_wait_start_time
-                        
                         # Update request status and counters
-                        self.request_pending -= 1
                         request.wait_time = total_wait_time
                         self.decrement_waiting()
                         
-                        if self.verbose:
-                            print(f"{self.env.now:.2f} - {request} waited {total_wait_time:.2f} time units")
-                        
                         # Update statistics
-                        if self.env.now > 200:
-                            latency_stats['waiting_time'] += total_wait_time
+                        if self.env.now > 0:
+                            self.latency_stats['waiting_time'] += total_wait_time
                         
                         # Start the service process
                         self.env.process(self.container_service_lifecycle(spawned_container))
@@ -206,7 +233,7 @@ class System:
                 # No server has enough resources
                 if self.verbose:
                     print(f"{self.env.now:.2f} - BLOCK: No server with sufficient capacity for {request}")
-                request_stats['blocked_no_server_capacity'] += 1
+                self.request_stats['blocked_no_server_capacity'] += 1
                 request.state = "Rejected"
                 self.decrement_waiting()
                 
@@ -214,10 +241,10 @@ class System:
                 self.record_request_info(request)
                 return
 
-    def find_server_for_spawn(self, request):
+    def find_server_for_spawn(self, resource_info):
         """Finds the first server with enough *current* capacity (First-Fit)."""
         for server in self.servers:
-            if server.has_capacity(request.resource_info):
+            if server.has_capacity(resource_info):
                 return server
         return None
 
@@ -225,8 +252,6 @@ class System:
         """Simulates the time and resource acquisition for spawning a container."""
         try:
             # Request the lock to prevent race conditions
-            # lock_request = server.resource_lock.request()
-            # yield lock_request
             # Update resource stats before allocation
             self.update_resource_stats()
             # Allocate resources directly from server variables
@@ -239,9 +264,6 @@ class System:
                 print(f"{self.env.now:.2f} - ERROR: Resource allocation failed on {server} for {request}.")
                 exit(1)
             
-            # Release the lock after allocation
-            # server.resource_lock.release(lock_request)
-
             # Wait for the container to be spawned
             if self.distribution == 'exponential':
                 # Exponentially distributed spawn time
@@ -260,11 +282,6 @@ class System:
                 print(f"{self.env.now:.2f} - Spawn Complete: Created {container}")
             
              # Record the spawn time for latency calculation
-            request.spawn_time += spawn_time_real
-            # Allocate model resources
-            yield self.env.process(container.assign_model(request))
-           
-            # Record the spawn time for latency calculation
             request.spawn_time += spawn_time_real
 
             return container  # Return the created container object
@@ -286,37 +303,39 @@ class System:
             return
 
         request = container.current_request
-        service_time = random.expovariate(self.service_rate)
+
+        if self.distribution == 'exponential':
+                # Exponentially distributed spawn time
+            service_time = random.expovariate(self.service_rate)
+        else:
+            service_time = self.service_rate  # Deterministic service time equal to the mean
+            
         if self.verbose:
             print(f"{self.env.now:.2f} - {request} starting service in {container}. Expected duration: {service_time:.2f}")
         # Update the request's state to "Running" when service starts
-        request.state = "Running"
+        container.state = "Active"
         self.increment_processing()  # Using the new method to track processing time
-
         yield self.env.timeout(service_time)
-
         # Record end service time for request
         request.end_service_time = self.env.now
-        
         # Service finished
-        request_stats['processed'] += 1
+        self.request_stats['processed'] += 1
         # Update the request's state to "Finished" when service completes
         request.state = "Finished"
-        
         container.release_request()
         self.decrement_processing()  # Using the new method to track processing time
         
         # Compute latencies: sum of spawn, waiting, and processing times
         processing_time = request.end_service_time - request.start_service_time
-        total_latency = request.wait_time + processing_time
+        total_latency = request.wait_time + service_time
         
         # Update global latency stats
-        if self.env.now > 200:
-            latency_stats['total_latency'] += total_latency
-            latency_stats['spawning_time'] += request.spawn_time
-            latency_stats['processing_time'] += processing_time
-            latency_stats['count'] += 1
-            
+        if self.env.now > 0:
+            self.latency_stats['total_latency'] += total_latency
+            self.latency_stats['spawning_time'] += request.spawn_time
+            self.latency_stats['processing_time'] += processing_time
+            self.latency_stats['count'] += 1
+
         self.record_request_info(request)
         
         if self.verbose:
@@ -328,74 +347,13 @@ class System:
 
     def container_idle_lifecycle(self, container):
         """Manages the idle timeout for a container."""
-        try:
-            # Determine idle timeout based on distribution type
-            if self.distribution == 'exponential':
-                # Exponentially distributed idle timeout
-                idle_timeout = random.expovariate(1.0/self.container_idle_model_timeout)
-            else:
-                # Deterministic idle timeout equal to the mean
-                # idle_timeout = random.expovariate(1.0/self.container_idle_timeout)
-                idle_timeout = self.container_idle_model_timeout
-                
-            if self.verbose:
-                print(f"{self.env.now:.2f} - Start model idle timeout, duration: {idle_timeout:.2f}s for {container}")
-            yield self.env.timeout(idle_timeout)
-            
-            # If timeout completes without interruption, continue the idle_cpu_timeout
-            container.state = "Idle_cpu"  # Mark as idle CPU
-
-            # Release model resources
-            container.release_model()
-
-            if self.verbose:
-                print(f"{self.env.now:.2f} - Model resources released for {container}. Starting CPU idle timeout.")
-            
-            if self.distribution == 'exponential':
-                # Exponentially distributed idle timeout
-                idle_timeout = random.expovariate(1.0/self.container_idle_cpu_timeout)
-            else:
-                # Deterministic idle timeout equal to the mean
-                # idle_timeout = random.expovariate(1.0/self.container_idle_timeout)
-                idle_timeout = self.container_idle_cpu_timeout
-                
-            if self.verbose:
-                print(f"{self.env.now:.2f} - Start CPU idle timeout, duration: {idle_timeout:.2f}s for {container}")
-            yield self.env.timeout(idle_timeout)
-
-            if self.verbose:
-                print(f"{self.env.now:.2f} - Idle timeout reached for {container}. Removing it.")
-            
-            request_stats['containers_removed_idle'] += 1
-
-            # Check if there's an active assignment process and interrupt it
-            if container.assignment_process and not container.assignment_process.triggered:
-                print(f"{self.env.now:.2f} - FATAL ERROR: Assignment process not triggered for {container}.")
-                exit(1)
-                # if self.verbose:
-                #     print(f"{self.env.now:.2f} - Interrupting ongoing assignment process for {container}")
-                # container.assignment_process.interrupt()
-            
-            # Mark container as dead and release resources
-            container.state = "Dead"  # Mark as expired
-            container.release_resources()
-
-        except simpy.Interrupt:
-            # Interrupted means it was reused before timeout!
-            if self.verbose:
-                print(f"{self.env.now:.2f} - {container} reused before idle timeout. Interrupt received.")
-
-    def add_idle_container(self, container):
-        """Adds a container to the idle store."""
         if self.verbose:
-            print(f"{self.env.now:.2f} - Adding {container} to idle pool.")
-        if container.state == "Idle_model":
-            self.idle_model_containers.put(container)
-        elif container.state == "Idle_cpu":
-            self.idle_cpu_containers.put(container)
-        else:
-            print(f"{self.env.now:.2f} - FATAL ERROR: {container} is not in a valid idle state. Adding to generic pool.")
-            exit(1)
+            print(f"{self.env.now:.2f} - Idle timeout reached for {container}. Removing it.")
+        
+        self.request_stats['containers_removed_idle'] += 1
+        # Mark container as dead and release resources
+        container.state = "Dead"  # Mark as expired
+        container.release_resources()
 
     def update_waiting_stats(self):
         """Update time-weighted statistics for waiting requests."""
@@ -427,15 +385,23 @@ class System:
         self.total_cpu_usage_area += time_delta * current_cpu_usage
         self.total_ram_usage_area += time_delta * current_ram_usage
         
+        # Update power usage across all servers and total energy usage
+        # Calculate current power
+        current_power_usage = sum(server.current_power() for server in self.servers)
+
+        self.total_energy_usage += current_power_usage * time_delta  # Energy = Power * Time
+
+        # Update last resource update time
         self.last_resource_update = current_time
-        
+
+
     def get_mean_cpu_usage(self):
         """Calculate the mean CPU usage over time."""
         # Update statistics first to include latest data
         self.update_resource_stats()
         
         if self.env.now > 0:
-            return self.total_cpu_usage_area / (self.env.now * len(self.servers))
+            return self.total_cpu_usage_area / (self.env.now)
         return 0.0
         
     def get_mean_ram_usage(self):
@@ -444,9 +410,18 @@ class System:
         self.update_resource_stats()
         
         if self.env.now > 0:
-            return self.total_ram_usage_area / (self.env.now * len(self.servers))
+            return self.total_ram_usage_area / (self.env.now)
         return 0.0
 
+    def get_mean_power_usage(self):
+        """Calculate the mean CPU usage over time."""
+        # Update statistics first to include latest data
+        self.update_resource_stats()
+        
+        if self.env.now > 0:
+            return self.total_energy_usage / (self.env.now)
+        return 0.0
+    
     def update_processing_stats(self):
         """Update time-weighted statistics for processing requests."""
         current_time = self.env.now

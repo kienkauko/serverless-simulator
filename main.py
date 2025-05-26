@@ -28,8 +28,18 @@ for i in range(config["system"]["num_servers"]):
     server = Server(env, f"Server-{i}", config["server"]["cpu_capacity"], config["server"]["ram_capacity"])
     system.add_server(server)
 
-# Start the request generation process
-env.process(system.request_generator())
+# Start the pre-warming process and get its event
+pre_warm_done = env.process(system.pre_warm())
+
+# Start the request generation process after pre-warming is complete
+def start_request_generator():
+    # Wait for pre-warming to complete
+    yield pre_warm_done
+    # Then start generating requests
+    env.process(system.request_generator())
+
+# Register the process chain
+env.process(start_request_generator())
 
 # Start the resource monitoring process 
 env.process(system.resource_monitor_process())

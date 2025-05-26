@@ -10,6 +10,7 @@ import networkx as nx  # For the magic
 import matplotlib.pyplot as plt  # For plotting
 import numpy as np
 from scipy import linalg
+import math
 # from graph import draw_graph_updated
 
 
@@ -21,12 +22,16 @@ class MarkovModel():
         self._lam = config["lam"]
         self._mu = config["mu"]
         self._alpha = 1/(1/config["spawn_rate"] + 1/config["mu"])
+        print(f"Alpha: {self._alpha}")
+        self._spawn_rate = config["spawn_rate"]
         self._max_queue_warm = config["queue_warm"]
         self._max_queue_cold = config["queue_cold"]
         self._ram_warm = config["ram_warm"]
         self._cpu_warm = config["cpu_warm"]
         self._ram_active = config["ram_demand"]
         self._cpu_active = config["cpu_demand"]
+        self._peak_power = config["peak_power"]
+        self._power_scale = config["power_scale"]
         # self._preload_videos = self._max_preload_segments / self._preload_segments_per_video
         # if self._preload_videos % 1 != 0:
         #     raise Exception(f"Invalid number of preloaded videos: {self._preload_videos}")
@@ -95,12 +100,12 @@ class MarkovModel():
 
             if next_alpha_state:
                 string_alpha = f"{current_state[1]}$\\alpha$"
-                add_transition(current_state, next_alpha_state, rate=current_state[0]*self._alpha, string=string_alpha, color=color_alpha)
+                add_transition(current_state, next_alpha_state, rate=current_state[1]*self._alpha, string=string_alpha, color=color_alpha)
                 waiting = add_state(visited, waiting, next_alpha_state)
 
             if next_mu_state:
                 string_mu = f"{current_state[0]}$\\mu$"
-                add_transition(current_state, next_mu_state, rate=current_state[1]*self._mu, string=string_mu, color=color_mu)
+                add_transition(current_state, next_mu_state, rate=current_state[0]*self._mu, string=string_mu, color=color_mu)
                 waiting = add_state(visited, waiting, next_mu_state)        
             # ADD NEW STATES TO QUEUE
                 
@@ -139,7 +144,6 @@ class MarkovModel():
         
         # Generate a matrix with P(X,Y)
         # max_segments = self._segments_per_video + self._max_preload_segments
-        max_queue = max(self._max_queue_warm, self._max_queue_cold)
         matrix = np.zeros((self._max_queue_warm + 1, self._max_queue_cold + 1))
         matrix[0,0] = X[ n2i[0,0] ]
         for s in list(n2i.keys()):
@@ -213,6 +217,7 @@ class MarkovModel():
         for s in self._n2i:
             if s[0] == self._max_queue_warm and s[1] == self._max_queue_cold:
                 blocking_states.append(s)
+        print("BLOCKING STATE", s)
         return blocking_states
 
     def _compute_blocking_ratio(self):
@@ -245,15 +250,26 @@ class MarkovModel():
         else:
             raise ValueError("Resource must be either 'cpu' or 'ram'")
         
-        spawn_time = 1/config["spawn_rate"]
-        serving_time = 1/config["mu"]
+        spawn_time = 1.0 / self._spawn_rate  # Derive spawn_rate from alpha
+        serving_time = 1.0 / self._mu
 
         mean_cold_consume = (spawn_time*transit + serving_time*active)/(spawn_time + serving_time)
 
-        resource = self._max_queue_warm*warm + self._compute_warm_job()*(active-warm) \
+        resource_usage = self._max_queue_warm*warm + self._compute_warm_job()*(active - warm) \
             + self._compute_cold_job()*mean_cold_consume
         
-        return resource
+        return resource_usage
+
+    def _computer_power_usage(self, cpu_usage):
+
+        driven_resource = max(self._cpu_active, self._ram_active)
+        num_con_per_server = math.floor(100/ driven_resource)  # Assume 100% resource capacity per server
+        num_job = self._max_queue_warm + self._compute_cold_job()
+        on_server = math.ceil(num_job/num_con_per_server)
+        base_power = self._peak_power * self._power_scale
+
+        return on_server * base_power + (cpu_usage / 100) * (self._peak_power - base_power)
+
 
     def _compute_effective_arrival_rate(self, block_ratio):
         return self._lam*( 1 - block_ratio)
@@ -333,6 +349,7 @@ class MarkovModel():
         latency = self._compute_latency(requests_in_system, effective_arrival_rate)
         cpu_usage = self._compute_resource_usage("cpu")
         ram_usage = self._compute_resource_usage("ram")
+        power_usage = self._computer_power_usage(cpu_usage)
         # cpu_usage = self._compute_cpu_usage()
         # ram_usage = self._compute_ram_usage()
         # cpu_usage_per_request = cpu_usage/total_requests
@@ -344,6 +361,7 @@ class MarkovModel():
             "latency": [latency],
             "cpu_usage": [cpu_usage],
             "ram_usage": [ram_usage],
+            "power_usage": [power_usage],
             # "processing_requests": [processing_requests],
             # "idling_requests": [idling_requests],
             # "effective_arrival_rates": [effective_arrival_rate],
@@ -590,11 +608,11 @@ def my_draw_networkx_edge_labels(
 
 if __name__=="__main__":
     config = {
-        "lam": 10,
+        "lam": 1,
         "mu": 1,
-        "spawn_rate": 1/4,
-        "queue_warm": 10, # queue
-        "queue_cold": 10, # queue
+        "spawn_rate": 1,
+        "queue_warm":5, # queue
+        "queue_cold": 5, # queue
         "serving_time": "exponential",
         "arrivals": "exponential",
         # "lam_factor": 1,
@@ -602,7 +620,9 @@ if __name__=="__main__":
         "cpu_warm": 1,
         "ram_demand": 40,
         "cpu_demand": 50,
-        "num_runs": 1
+        "peak_power": 150.0,
+        "power_scale": 0.5,  # Power scale factor
+
     }
     m = MarkovModel(config, verbose=False)
     G = m._G

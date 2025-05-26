@@ -1,19 +1,21 @@
 import simpy
 class Server:
     """Represents a physical server with resource capacities."""
-    def __init__(self, env, server_id, cpu_capacity, ram_capacity):
+    def __init__(self, env, server_id, config):
         self.env = env
         self.id = server_id
         # Normal variables to represent available resources
-        self.cpu_reserve = cpu_capacity
-        self.ram_reserve = ram_capacity
-        self.cpu_real = cpu_capacity
-        self.ram_real = ram_capacity
-        self.cpu_capacity = cpu_capacity  # Store the maximum capacity
-        self.ram_capacity = ram_capacity  # Store the maximum capacity
+        self.cpu_reserve = config['cpu_capacity']  # Reserve for new requests
+        self.ram_reserve = config['ram_capacity']  # Reserve for new requests
+        self.cpu_real = config['cpu_capacity']  # Real-time available resources
+        self.ram_real = config['ram_capacity']  # Real-time available resources
+        self.cpu_capacity = config['cpu_capacity']  # Store the maximum capacity
+        self.ram_capacity = config['ram_capacity']  # Store the maximum capacity
         self.containers = [] # Keep track of containers running on this server
         # Add a lock to prevent race conditions during resource allocation
         self.resource_lock = simpy.Resource(env, capacity=1)
+        self.peak_power = config['peak_power']  # Peak power consumption in Watts
+        self.power_scale = config['power_scale']  # Power scale factor (0-1)  
 
     def __str__(self):
         return (f"Server_{self.id}("
@@ -34,3 +36,19 @@ class Server:
             self.ram_real -= delta_ram
             return True
         return False
+    
+    def current_power(self):
+        """Calculates the current power consumption based on the peak power and scale factor."""
+        if self.is_on():
+            # If the server is on, calculate power based on CPU and RAM usage
+            return self.peak_power * self.power_scale + ((self.cpu_capacity - self.cpu_real)/self.cpu_capacity) * self.peak_power * (1 - self.power_scale)
+        else:
+            return 0.0
+        
+        
+    def is_on(self):
+        """Checks if the server is currently powered on."""
+        if self.cpu_real < self.cpu_capacity or self.ram_real < self.ram_capacity:
+            return True
+        else:
+            return False
