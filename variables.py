@@ -11,10 +11,10 @@ USE_TOPOLOGY = False  # New flag to enable/disable topology routing
 config = {
     # System Parameters
     "system": {
-        "num_servers": 10,
-        "sim_time": 1000,
+        "num_servers": 2,
+        "sim_time": 5000,
         "distribution": "exponential",  # Options: "deterministic", "uniform", "exponential"
-        "verbose": True,
+        "verbose": False,
     },
     
     # Server Parameters
@@ -25,26 +25,26 @@ config = {
     
     # Request Parameters
     "request": {
-        "arrival_rate": 15,  # Average requests per time unit (lambda for M)
-        "service_rate": 1,  # Average service completions per time unit (mu for M)
+        "arrival_rate": 10,  # Average requests per time unit (lambda for M)
+        "service_rate": 2,  # Average service completions per time unit (mu for M)
         "bandwidth_demand": 10.0,  # Bandwidth consumption per request
         
         # CPU and RAM demands - fixed values instead of ranges
         "warm_cpu": 1,
-        "warm_ram": 10,
+        "warm_ram": 30,
         "warm_cpu_model": 1,
-        "warm_ram_model": 25,
-        "cpu_demand": 30.0,
-        "ram_demand": 30.0,
+        "warm_ram_model": 30,
+        "cpu_demand": 50.0,
+        "ram_demand": 50.0,
     },
     
     # Container Parameters
     "container": {
-        "spawn_time": 4,   # Time units to spawn a container
-        "idle_cpu_timeout": 3,     # Time units an idle container waits before removal
-        "idle_model_timeout": 0.001,   # Time units an idle model waits before removal
-        "load_request_time": 1/1000,  # Time units to load a request into a container
-        "load_model_time": 4,    # Time units to load a model into a container
+        "spawn_time": 1/0.25,   # Time units to spawn a container
+        "idle_cpu_timeout": 1/0.5,     # Time units an idle container waits before removal
+        "idle_model_timeout": 0.0001,   # Time units an idle model waits before removal
+        "load_request_time": 1/10000,  # Time units to load a request into a container
+        "load_model_time": 0.0001,    # Time units to load a model into a container
     },
     
     # Topology Parameters

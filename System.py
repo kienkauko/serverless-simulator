@@ -139,7 +139,7 @@ class System:
                 request.wait_time = total_wait
                 self.decrement_waiting()
                 # Only update latency statistics when system is stable
-                if self.env.now > 200:
+                if self.env.now > 0:
                     latency_stats['waiting_time'] += total_wait
                 if self.verbose:
                     print(f"{self.env.now:.2f} - {request} waited {total_wait:.2f}")
@@ -189,7 +189,7 @@ class System:
                             print(f"{self.env.now:.2f} - {request} waited {total_wait_time:.2f} time units")
                         
                         # Update statistics
-                        if self.env.now > 200:
+                        if self.env.now > 0:
                             latency_stats['waiting_time'] += total_wait_time
                         
                         # Start the service process
@@ -311,7 +311,7 @@ class System:
         total_latency = request.wait_time + processing_time
         
         # Update global latency stats
-        if self.env.now > 200:
+        if self.env.now > 0:
             latency_stats['total_latency'] += total_latency
             latency_stats['spawning_time'] += request.spawn_time
             latency_stats['processing_time'] += processing_time
@@ -435,7 +435,7 @@ class System:
         self.update_resource_stats()
         
         if self.env.now > 0:
-            return self.total_cpu_usage_area / (self.env.now * len(self.servers))
+            return self.total_cpu_usage_area / (self.env.now )
         return 0.0
         
     def get_mean_ram_usage(self):
@@ -444,7 +444,7 @@ class System:
         self.update_resource_stats()
         
         if self.env.now > 0:
-            return self.total_ram_usage_area / (self.env.now * len(self.servers))
+            return self.total_ram_usage_area / (self.env.now )
         return 0.0
 
     def update_processing_stats(self):

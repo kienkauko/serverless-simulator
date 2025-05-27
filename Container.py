@@ -25,8 +25,7 @@ class Container:
         self.assignment_process = None # Track the current assignment process
 
     def __str__(self):
-        state = f"Serving {self.current_request.id}" if self.current_request else f"Idle since {self.idle_since:.2f}"
-        return f"Cont_{self.id}(on Srv_{self.server.id}, State: {state})"
+        return f"Cont_{self.id}(on Srv_{self.server.id}, State: {self.state})"
 
     def assign_model(self, request):
         if self.current_request:

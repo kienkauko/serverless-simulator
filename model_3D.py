@@ -18,10 +18,11 @@ class MarkovModel():
     def __init__(self, config: dict, verbose: bool = False):
         self._verbose = verbose
         # print(config)
-        self._lam = config["lam"]
-        self._mu = config["mu"]
-        self._alpha = config["alpha"]
-        self._beta = config["beta"]
+        self._lam = config["arrival_rate"]
+        self._mu = config["service_rate"]
+        self._spawn_rate = config["spawn_rate"]
+        self._alpha = self._mu * self._spawn_rate/(self._mu + self._spawn_rate)
+        self._beta = config["service_rate"]
         self._theta = config["theta"]
         self._max_queue = config["max_queue"]
         self._ram_warm = config["ram_warm"]
@@ -73,13 +74,14 @@ class MarkovModel():
             visited.append(current_state)
             
             # Identify next cold state
-            if current_state[0] + current_state[1]  < self._max_queue \
-                and current_state[2] == 0:
-                next_lambda_state = (current_state[0]+1, 
-                                     current_state[1], 
-                                     current_state[2])
-            elif current_state[2] > 0:
-                next_beta_state = (current_state[0], current_state[1] + 1, current_state[2] - 1)
+            if current_state[0] + current_state[1]  < self._max_queue:
+                if current_state[2] > 0:
+                    next_lambda_state = (current_state[0], current_state[1] + 1, current_state[2] - 1)
+
+                else:
+                    next_lambda_state = (current_state[0]+1, 
+                                        current_state[1], 
+                                        current_state[2])
             else:
                 next_lambda_state = current_state  # loops are not added
 
@@ -227,7 +229,7 @@ class MarkovModel():
     def _get_blocking_states(self):
         blocking_states = []
         for s in self._n2i:
-            if s[0] + s[1] + s[2] == self._max_queue:
+            if s[0] + s[1] == self._max_queue:
                 blocking_states.append(s)
         return blocking_states
 
@@ -242,6 +244,12 @@ class MarkovModel():
     def _compute_processing_requests(self):
         return np.sum([(s[0] + s[1])*self._state_probabilities[s] for s in self._n2i])
     
+    def _compute_cold_requests(self):
+        return np.sum([s[0]*self._state_probabilities[s] for s in self._n2i])
+    
+    def _compute_warm_requests(self):
+        return np.sum([s[1]*self._state_probabilities[s] for s in self._n2i])
+    
     def _compute_idling_container(self):
         return np.sum([s[2]*self._state_probabilities[s] for s in self._n2i])
     
@@ -253,11 +261,25 @@ class MarkovModel():
         # apply Little Law here
         return requests_in_system/effective_arrival_rate
     
-    def _compute_cpu_usage(self):
-        return np.sum([((s[0] + s[2])*self._cpu_warm + s[1]*self._cpu_active)*self._state_probabilities[s] for s in self._n2i.keys()])
+    def _compute_resource_usage(self, resource: str):
+        if resource == 'cpu':
+            warm = self._cpu_warm
+            active = self._cpu_active
+        elif resource == 'ram':
+            warm = self._ram_warm
+            active = self._ram_active
+        else:
+            raise ValueError("Resource must be either 'cpu' or 'ram'")
+        cold_job = self._compute_cold_requests()
+        warm_job = self._compute_warm_requests()
+        idle_containers = self._compute_idling_container()
+        cold_consumption = cold_job * (warm*1/self._spawn_rate + active*1/self._mu)/(1/self._spawn_rate + 1/self._mu)
+        warm_consumption = warm_job * active
+        idle_consumption = idle_containers * warm
+        return cold_consumption + warm_consumption + idle_consumption
     
-    def _compute_ram_usage(self):
-        return np.sum([((s[0] + s[2])*self._ram_warm + s[1]*self._ram_active)*self._state_probabilities[s] for s in self._n2i.keys()])
+    # def _compute_ram_usage(self):
+    #     return np.sum([((s[0] + s[2])*self._ram_warm + s[1]*self._ram_active)*self._state_probabilities[s] for s in self._n2i.keys()])
     
 
     def calculate_queue_pgf(self, z=1):
@@ -320,8 +342,8 @@ class MarkovModel():
         # idling_requests = self._compute_idling_requests()
         effective_arrival_rate = self._compute_effective_arrival_rate(block_ratio)
         waiting_time = self._compute_waiting_time(processing_requests, effective_arrival_rate)
-        cpu_usage = self._compute_cpu_usage()
-        ram_usage = self._compute_ram_usage()
+        cpu_usage = self._compute_resource_usage("cpu")
+        ram_usage = self._compute_resource_usage("ram")
         # cpu_usage_per_request = cpu_usage/total_requests
         # ram_usage_per_request = ram_usage/total_requests
 
@@ -366,7 +388,7 @@ def draw_graph_updated(G, node_size=1500, rad=-0.2, scale_x=0.5, scale_y=1.0, k_
             try:
                 # Ensure components are numeric and non-negative
                 i, j, k = map(float, node) # Convert to float for calculation
-                print(f"Node {node} has components: i={i}, j={j}, k={k}")
+                # print(f"Node {node} has components: i={i}, j={j}, k={k}")
                 if not (i >= 0 and j >= 0 and k >= 0):
                     raise ValueError("Components must be non-negative")
             except (ValueError, TypeError):
@@ -381,15 +403,15 @@ def draw_graph_updated(G, node_size=1500, rad=-0.2, scale_x=0.5, scale_y=1.0, k_
             
             # Base horizontal position from i
 
-            x = scale_x * (i+j)
+            x = scale_x * (i+k)
             
             # Base vertical position from j
 
-            y = -scale_y * j  # Negative to move downward
+            y = -scale_y * k  # Negative to move downward
             
             # Apply k offset for diagonal movement
-            x += k * k_offset_x
-            y -= k * k_offset_y  # Further down and to the right
+            x += j * k_offset_x
+            y -= j * k_offset_y  # Further down and to the right
             # if k > 0:
             #     y -= k*2
             pos[node] = (x, y)
@@ -595,16 +617,15 @@ def my_draw_networkx_edge_labels(
 
 if __name__=="__main__":
     config = {
-        "lam": 14.7,
-        "mu": 2,
-        "alpha": 0.8,
-        "beta": 14.7,
-        "theta": 0.0,
-        "max_queue": 3, # queue
-        "ram_warm": 6,
-        "cpu_warm": 2,
-        "ram_demand": 56,
-        "cpu_demand": 21
+        "arrival_rate": 10,
+        "service_rate": 2,
+        "spawn_rate": 0.25,
+        "theta": 0.5,
+        "max_queue": 2, # queue
+        "ram_warm": 30,
+        "cpu_warm": 1,
+        "ram_demand": 50,
+        "cpu_demand": 50
     }
     m = MarkovModel(config, verbose=False)
     G = m._G
