@@ -1,13 +1,14 @@
 # Markov Model for Serverless Deployment
 
-This repo contains scripts to generate 3D Markov chain that models the operation of serverless function (with different states in its lifecycle: null, warm, active). From the model, various performance and consumption metrics can be derived. This repo also comes with a simple simulator that simulates serverless deployment in reaction to homogeneous requests coming to a cluster of homogeneous servers. The simulator is used to verify and validate the Markov model. A better simulator that captures sophisticated mapping and routing strategies is available in branch main.
+This repo contains scripts to generate any-dimension Markov chain that models the operation of serverless function (with different states in its lifecycle: null, warm, warm model, active). From the model, performance and consumption metrics are derived. This repo also comes with a simple simulator that simulates serverless deployment in reaction to homogeneous requests coming to a cluster of homogeneous servers. The simulator is used to verify and validate the Markov model. A better simulator that captures sophisticated mapping and routing strategies is available in branch main.
 
 ## How to Run
 
 ### 1. Standalone Mode
 
 #### Markov Model
-- Run [`/Markov/model_3D.py`](/Markov/model_3D.py) to execute the Markov model
+- Run models directly from the main directory: `model_2D.py`, `model_3D.py`, `model_4D.py`, or `model_general.py`
+- The `model_general.py` is a general implementation that supports 2D, 3D, 4D, and any user-defined dimension
 - The graph illustration of the Markov state machine can be enabled by uncommenting the `draw_graph_new` function in the main section
 - Example of graph output: [`/Markov/graph_example.png`](/Markov/graph_example.png)
 
@@ -16,15 +17,22 @@ This repo contains scripts to generate 3D Markov chain that models the operation
 - When running in standalone mode, the simulator will take input parameters from [`variables.py`](variables.py)
 
 ### 2. Comparison Mode
-- Run [`model_comparison.py`](model_comparison.py) to execute both the Markov model and simulator with the same input parameters
+- Run [`validation_model.py`](validation_model.py) to execute both the Markov model and simulator with the same input parameters
 - Results are compared against each other and stored in the [`/comparison_results`](/comparison_results) folder
-- Input metrics for this mode can be configured in the main section of [`model_comparison.py`](model_comparison.py)
+- Input metrics for this mode can be configured in the main section of [`validation_model.py`](validation_model.py)
 - Note that [`variables.py`](variables.py) is not used as input for the simulator in this mode
+
+### 3. Evaluation Files
+- Contains three key evaluation scripts:
+  - `theta_fixed_lambda_study.py`: Keeps lambda fixed and studies the impact of theta on KPIs using the 3D model
+  - `theta_gamma_fixed_lambda_study.py`: Keeps lambda fixed and studies the impact of both theta and gamma on KPIs using the 4D model
+  - `theta_gamma_study_combined.py`: Combined study of theta and gamma with varying lambda values
+- Results from these evaluations are saved in the `optimization_results` folder
 
 # Detailed Simulation Report
 
 - **Report Generated:** 10:43AM on 16/04/2025
-- **Updated:** 05/05/2025
+- **Updated:** 15/07/2025
 
 ## Simulator Functions & Mechanisms
 
@@ -57,6 +65,18 @@ This repo contains scripts to generate 3D Markov chain that models the operation
 - **Additional Simulator Notes:**
   - Simulation statistics aggregate metrics such as processed requests, resource spawning attempts, blocking reasons, and latency sums.
   - Detailed logging is implemented to track each step in the lifecycle of requests and containers.
+  - Currently the simulator can only simulate up to 5D model with app lifecycle containing 4 states: Null, Warm CPU, Warm Model, Active.
+  - By adjusting the following metrics:
+    ```
+    "container": {
+        "spawn_time": 1/0.25,   # Time units to spawn a container
+        "idle_cpu_timeout": 1/0.5,     # Time units an idle container waits before removal
+        "idle_model_timeout": 0.0001,   # Time units an idle model waits before removal
+        "load_request_time": 1/10000,  # Time units to load a request into a container
+        "load_model_time": 10,    # Time units to load a model into a container
+    },
+    ```
+  - The simulator can be used to simulate 2D and 3D models with fewer states in the lifecycle.
 
 ## Markov Model Implementation
 
@@ -84,7 +104,7 @@ This repo contains scripts to generate 3D Markov chain that models the operation
 ## Model Comparison Framework
 
 - **Comparative Analysis:**
-  - The [`model_comparison.py`](model_comparison.py) file provides a framework to compare the analytical Markov model with simulation results.
+  - The [`validation_model.py`](validation_model.py) file provides a framework to compare the analytical Markov model with simulation results.
   - Parameters are unified between both approaches to ensure fair comparison.
   
 - **Configurable Scenarios:**

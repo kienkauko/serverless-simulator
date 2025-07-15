@@ -2,7 +2,7 @@ import simpy
 import random
 import itertools
 import math  # Added for sine calculations in day-night pattern
-from variables import *
+# from variables import *
 from Request import Request
 from Container import Container 
 
@@ -48,14 +48,39 @@ class System:
         self.total_ram_usage_area = 0.0  # Time-weighted RAM usage
         self.total_cpu_capacity = 0.0  # Total CPU capacity of all servers
         self.total_ram_capacity = 0.0  # Total RAM capacity of all servers
-        
+        self.total_energy_usage_area = 0.0  # Time-weighted CPU usage
+
         # New variable to track detailed request information
         self.request_records = []  # List to store detailed information about each request
         
         # New variable to track resource consumption over time
         self.resource_history = []  # List to store snapshots of resource usage
         self.last_resource_snapshot = 0.0  # Time of the last resource snapshot
-    
+
+        self.request_stats = {
+            'generated': 0,
+            'processed': 0,
+            'blocked_no_server_capacity': 0, # Blocked because no server could *ever* fit it
+            'blocked_spawn_failed': 0,      # Blocked because spawning failed (transient lack of resources)
+            'blocked_no_path': 0,  # New: rejected due to no routing path with available bandwidth
+            'container_spawns_initiated': 0,
+            'container_spawns_failed': 0,
+            'container_spawns_succeeded': 0,
+            'containers_reused': 0,
+            'containers_removed_idle': 0,
+            'reuse_oom_failures': 0, # Out Of Memory/CPU when trying to activate reused container
+        }
+
+        # New dictionary to track latency metrics (in time units)
+        self.latency_stats = {
+            'total_latency': 0.0,
+            'spawning_time': 0.0,
+            'processing_time': 0.0,
+            'waiting_time': 0.0,      # Total waiting time (container wait + assignment)
+            'container_wait_time': 0.0, # Time waiting for an idle container
+            'assignment_time': 0.0,   # Time for the assignment process
+            'count': 0
+        }
     def add_server(self, server):
         """Add a server to the system"""
         self.servers.append(server)
@@ -91,7 +116,7 @@ class System:
             # Get fixed CPU and RAM values from config
             resource_demand = self.config["request"]
             request = Request(req_id, arrival_time, resource_demand)
-            request_stats['generated'] += 1
+            self.request_stats['generated'] += 1
             if self.verbose:
                 print(f"{self.env.now:.2f} - Request Generated: {request}")
             # Start the handling process for this request
@@ -127,7 +152,7 @@ class System:
                         print(f"{self.env.now:.2f} - WARNING: Retrieved {container} ({container.state}), discarding.")
                     continue
                 # assign the request
-                request_stats['containers_reused'] += 1
+                self.request_stats['containers_reused'] += 1
                 container.assignment_process = self.env.process(container.assign_request(request))
                 assignment_ok = yield container.assignment_process
                 container.assignment_process = None
@@ -140,7 +165,7 @@ class System:
                 self.decrement_waiting()
                 # Only update latency statistics when system is stable
                 if self.env.now > 0:
-                    latency_stats['waiting_time'] += total_wait
+                    self.latency_stats['waiting_time'] += total_wait
                 if self.verbose:
                     print(f"{self.env.now:.2f} - {request} waited {total_wait:.2f}")
                 # start service
@@ -159,7 +184,7 @@ class System:
                 # Resources available, spawn new container for this request
                 if self.verbose:
                     print(f"{self.env.now:.2f} - Resources available on {server}. Spawning container for request {request}.")
-                request_stats['container_spawns_initiated'] += 1
+                self.request_stats['container_spawns_initiated'] += 1
                 self.request_pending += 1  # Increment pending requests
                 request.state = "Pending"  # Update request state to Pending
                 
@@ -169,7 +194,7 @@ class System:
                 
                 if spawned_container:
                     # Container spawned successfully, assign the request directly
-                    request_stats['container_spawns_succeeded'] += 1
+                    self.request_stats['container_spawns_succeeded'] += 1
                     
                     # Start the assignment process
                     spawned_container.assignment_process = self.env.process(spawned_container.assign_request(request))
@@ -190,7 +215,7 @@ class System:
                         
                         # Update statistics
                         if self.env.now > 0:
-                            latency_stats['waiting_time'] += total_wait_time
+                            self.latency_stats['waiting_time'] += total_wait_time
                         
                         # Start the service process
                         self.env.process(self.container_service_lifecycle(spawned_container))
@@ -206,7 +231,7 @@ class System:
                 # No server has enough resources
                 if self.verbose:
                     print(f"{self.env.now:.2f} - BLOCK: No server with sufficient capacity for {request}")
-                request_stats['blocked_no_server_capacity'] += 1
+                self.request_stats['blocked_no_server_capacity'] += 1
                 request.state = "Rejected"
                 self.decrement_waiting()
                 
@@ -299,7 +324,7 @@ class System:
         request.end_service_time = self.env.now
         
         # Service finished
-        request_stats['processed'] += 1
+        self.request_stats['processed'] += 1
         # Update the request's state to "Finished" when service completes
         request.state = "Finished"
         
@@ -312,10 +337,10 @@ class System:
         
         # Update global latency stats
         if self.env.now > 0:
-            latency_stats['total_latency'] += total_latency
-            latency_stats['spawning_time'] += request.spawn_time
-            latency_stats['processing_time'] += processing_time
-            latency_stats['count'] += 1
+            self.latency_stats['total_latency'] += total_latency
+            self.latency_stats['spawning_time'] += request.spawn_time
+            self.latency_stats['processing_time'] += processing_time
+            self.latency_stats['count'] += 1
             
         self.record_request_info(request)
         
@@ -330,14 +355,12 @@ class System:
         """Manages the idle timeout for a container."""
         try:
             # Determine idle timeout based on distribution type
-            if self.distribution == 'exponential':
-                # Exponentially distributed idle timeout
-                idle_timeout = random.expovariate(1.0/self.container_idle_model_timeout)
-            else:
-                # Deterministic idle timeout equal to the mean
-                # idle_timeout = random.expovariate(1.0/self.container_idle_timeout)
-                idle_timeout = self.container_idle_model_timeout
-                
+            # if self.distribution == 'exponential':
+            #     idle_timeout = random.expovariate(1.0/self.container_idle_model_timeout)
+            # else:
+            #     idle_timeout = self.container_idle_model_timeout
+            idle_timeout = random.expovariate(1.0/self.container_idle_model_timeout)
+   
             if self.verbose:
                 print(f"{self.env.now:.2f} - Start model idle timeout, duration: {idle_timeout:.2f}s for {container}")
             yield self.env.timeout(idle_timeout)
@@ -351,13 +374,11 @@ class System:
             if self.verbose:
                 print(f"{self.env.now:.2f} - Model resources released for {container}. Starting CPU idle timeout.")
             
-            if self.distribution == 'exponential':
-                # Exponentially distributed idle timeout
-                idle_timeout = random.expovariate(1.0/self.container_idle_cpu_timeout)
-            else:
-                # Deterministic idle timeout equal to the mean
-                # idle_timeout = random.expovariate(1.0/self.container_idle_timeout)
-                idle_timeout = self.container_idle_cpu_timeout
+            # if self.distribution == 'exponential':
+            #     idle_timeout = random.expovariate(1.0/self.container_idle_cpu_timeout)
+            # else:
+            #     idle_timeout = self.container_idle_cpu_timeout
+            idle_timeout = random.expovariate(1.0/self.container_idle_cpu_timeout)
                 
             if self.verbose:
                 print(f"{self.env.now:.2f} - Start CPU idle timeout, duration: {idle_timeout:.2f}s for {container}")
@@ -366,7 +387,7 @@ class System:
             if self.verbose:
                 print(f"{self.env.now:.2f} - Idle timeout reached for {container}. Removing it.")
             
-            request_stats['containers_removed_idle'] += 1
+            self.request_stats['containers_removed_idle'] += 1
 
             # Check if there's an active assignment process and interrupt it
             if container.assignment_process and not container.assignment_process.triggered:
@@ -422,11 +443,11 @@ class System:
         # Calculate current CPU and RAM usage across all servers
         current_cpu_usage = sum(server.cpu_capacity - server.cpu_real  for server in self.servers)
         current_ram_usage = sum(server.ram_capacity - server.ram_real  for server in self.servers)
-        
+        current_power_usage = sum(server.power_consumption() for server in self.servers)
         # Update time-weighted usage areas
         self.total_cpu_usage_area += time_delta * current_cpu_usage
         self.total_ram_usage_area += time_delta * current_ram_usage
-        
+        self.total_energy_usage_area += time_delta * current_power_usage
         self.last_resource_update = current_time
         
     def get_mean_cpu_usage(self):
@@ -447,6 +468,15 @@ class System:
             return self.total_ram_usage_area / (self.env.now )
         return 0.0
 
+    def get_mean_power_usage(self):
+        """Calculate the mean CPU usage over time."""
+        # Update statistics first to include latest data
+        self.update_resource_stats()
+        
+        if self.env.now > 0:
+            return self.total_energy_usage_area / (self.env.now )
+        return 0.0
+    
     def update_processing_stats(self):
         """Update time-weighted statistics for processing requests."""
         current_time = self.env.now
@@ -602,3 +632,30 @@ class System:
             
             # Wait for 1 time unit before taking the next snapshot
             yield self.env.timeout(1.0)
+    
+    def get_metrics(self):
+        blocking_probability = 0.0
+        if self.request_stats['generated'] > 0:
+            blocking_probability = self.request_stats['blocked_no_server_capacity'] / self.request_stats['generated']
+        
+        avg_latency = 0.0
+        if self.latency_stats['count'] > 0:
+            avg_latency = self.latency_stats['total_latency'] / self.latency_stats['count']
+        # print(f"Total latency: {self.latency_stats['total_latency']:.10f}")
+        # print(f"Avg latency: {avg_latency:.10f}")
+        mean_cpu_usage = self.get_mean_cpu_usage()
+        mean_ram_usage = self.get_mean_ram_usage()
+        mean_power_usage = self.get_mean_power_usage()
+
+        effective_lambda = self.arrival_rate * (1 - blocking_probability)
+        mean_cpu_usage_per_request = mean_cpu_usage / effective_lambda if effective_lambda > 0 else 0.0
+        mean_ram_usage_per_request = mean_ram_usage / effective_lambda if effective_lambda > 0 else 0.0
+        mean_power_usage_per_request = mean_power_usage / effective_lambda if effective_lambda > 0 else 0.0
+        return {
+            'blocking_ratios': [blocking_probability],
+            'latency': [avg_latency],
+            'cpu_usage_per_request': [mean_cpu_usage_per_request],
+            'ram_usage_per_request': [mean_ram_usage_per_request],
+            'power_usage_per_request': [mean_power_usage_per_request],
+            # 'power_usage': mean_power_usage
+        }

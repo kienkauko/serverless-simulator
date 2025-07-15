@@ -7,6 +7,8 @@ class Request:
         self.ram_demand = resource_demand['ram_demand']
         self.cpu_warm_model = resource_demand['warm_cpu_model']
         self.ram_warm_model = resource_demand['warm_ram_model']
+        # self.cpu_transit = resource_demand['transit_cpu']
+        # self.ram_transit = resource_demand['transit_ram']
         self.resource_info = resource_demand
         self.id = req_id
         self.arrival_time = arrival_time

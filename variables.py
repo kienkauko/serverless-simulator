@@ -12,7 +12,7 @@ config = {
     # System Parameters
     "system": {
         "num_servers": 2,
-        "sim_time": 5000,
+        "sim_time": 10000,
         "distribution": "exponential",  # Options: "deterministic", "uniform", "exponential"
         "verbose": False,
     },
@@ -32,6 +32,10 @@ config = {
         # CPU and RAM demands - fixed values instead of ranges
         "warm_cpu": 1,
         "warm_ram": 30,
+        "cpu_transit_cpu_to_model": 5,
+        "ram_transit_cpu_to_model": 50,
+        "cpu_transit_null_to_cpu": 5,
+        "ram_transit_null_to_cpu": 50,
         "warm_cpu_model": 1,
         "warm_ram_model": 30,
         "cpu_demand": 50.0,
@@ -44,7 +48,7 @@ config = {
         "idle_cpu_timeout": 1/0.5,     # Time units an idle container waits before removal
         "idle_model_timeout": 0.0001,   # Time units an idle model waits before removal
         "load_request_time": 1/10000,  # Time units to load a request into a container
-        "load_model_time": 0.0001,    # Time units to load a model into a container
+        "load_model_time": 10,    # Time units to load a model into a container
     },
     
     # Topology Parameters
