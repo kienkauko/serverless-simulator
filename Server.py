@@ -22,7 +22,7 @@ class Server:
         self.spawn_time_factor = config['spawn_time_factor']  # Spawn time multiplier
         self.containers = [] # Keep track of containers running on this server
         # Add a lock to prevent race conditions during resource allocation
-        self.resource_lock = simpy.Resource(env, capacity=1)
+        # self.resource_lock = simpy.Resource(env, capacity=1)
 
     def __str__(self):
         return (f"Server_{self.id}("
@@ -53,14 +53,14 @@ class Server:
 
         try:
             # Request the lock to prevent race conditions
-            lock_request = self.resource_lock.request()
-            yield lock_request
+            # lock_request = self.resource_lock.request()
+            # yield lock_request
             
             # Check available resources first before attempting to allocate
             if self.cpu_reserve < request.cpu_demand or self.ram_reserve < request.ram_demand or \
                self.cpu_real < request.cpu_warm or self.ram_real < request.ram_warm:
                 print(f"{self.env.now:.2f} - Resource check failed just before acquiring on {self} for {request}.")
-                self.resource_lock.release(lock_request)
+                # self.resource_lock.release(lock_request)
                 self.env.exit(None)  # Signal spawn failure
 
             # Log levels before acquiring resources
@@ -79,7 +79,7 @@ class Server:
                 print(f"{self.env.now:.2f} - Server after spawn: {self}")
             
             # Release the lock after allocation
-            self.resource_lock.release(lock_request)
+            # self.resource_lock.release(lock_request)
 
             # Determine spawn time based on app type and cluster type
             base_spawn_time = APPLICATIONS[request.app_id]["base_spawn_time"]
@@ -115,11 +115,11 @@ class Server:
         except Exception as e:  # Catch other potential issues
             print(f"ERROR: {self.env.now:.2f} - Unexpected error during spawn for {request} on {self}: {e}")  # Always print errors
             # Make sure we release the lock if we have it and there's an error
-            if 'lock_request' in locals():
-                try:
-                    self.resource_lock.release(lock_request)
-                except:
-                    pass
+            # if 'lock_request' in locals():
+            #     try:
+            #         self.resource_lock.release(lock_request)
+            #     except:
+            #         pass
             exit(1)
     
     def is_ON(self):

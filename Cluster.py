@@ -63,7 +63,7 @@ class Cluster:
     def get_mean_cpu(self, result_type, resource_type):
         """Calculate the mean CPU usage over time."""
         # Update statistics first to include latest data
-        self.update_resource_stats()
+        # self.update_resource_stats()
         
         if result_type == 'cluster':
             if resource_type == 'usage':
@@ -79,7 +79,7 @@ class Cluster:
     def get_mean_ram(self, result_type, resource_type):
         """Calculate the mean RAM usage over time."""
         # Update statistics first to include latest data
-        self.update_resource_stats()
+        # self.update_resource_stats()
         
         if result_type == 'cluster':
             if resource_type == 'usage':
@@ -96,7 +96,7 @@ class Cluster:
     def get_mean_power(self, type):
         """Calculate the mean CPU usage over time."""
         # Update statistics first to include latest data
-        self.update_resource_stats()
+        # self.update_resource_stats()
         
         if type == 'cluster':
             return self.total_energy_usage_area / (self.env.now)

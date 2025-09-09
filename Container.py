@@ -47,16 +47,16 @@ class Container:
             print(f"{self.env.now:.2f} - {self} request asks for more resources (+CPU:{delta_cpu:.1f}, +RAM:{delta_ram:.1f})")
         
         # Use the server's resource lock to prevent race conditions - request the lock
-        lock_request = self.server.resource_lock.request()
-        yield lock_request
+        # lock_request = self.server.resource_lock.request()
+        # yield lock_request
         # Update resource stats before allocation
-        self.cluster.update_resource_stats()
+        # self.cluster.update_resource_stats()
         try:            
             # Attempt to allocate the new resources
             if not self.server.allocate_resources(delta_cpu, delta_ram):
                 print(f"{self.env.now:.2f} - ERROR: Insufficient resources on {self.server} for {request}")
                 # Release the lock before returning
-                self.server.resource_lock.release(lock_request)
+                # self.server.resource_lock.release(lock_request)
                 # Reset the container state and clear the current_request since scaling failed
                 self.state = "Idle"
                 self.current_request = None
@@ -66,7 +66,7 @@ class Container:
                 print(f"{self.env.now:.2f} - {self} allocated resources (CPU:{delta_cpu:.1f}, RAM:{delta_ram:.1f}) for {request} on {self.server}")
             
             # Release the lock after successful allocation
-            self.server.resource_lock.release(lock_request)
+            # self.server.resource_lock.release(lock_request)
                 
             # Update the container's allocated resources
             self.cpu_alloc = request.cpu_demand
@@ -80,7 +80,7 @@ class Container:
         except Exception as e:
             # Make sure we release the lock even if there's an error
             print(f"{self.env.now:.2f} - ERROR in scale_for_request: {e}")
-            self.server.resource_lock.release(lock_request)
+            # self.server.resource_lock.release(lock_request)
             # Reset the container state and clear the current_request since scaling failed
             self.state = "Idle"
             self.current_request = None
@@ -93,8 +93,8 @@ class Container:
             exit(1) # Nothing to release
 
         # Use the server's resource lock to prevent race conditions
-        lock_request = self.server.resource_lock.request()
-        yield lock_request
+        # lock_request = self.server.resource_lock.request()
+        # yield lock_request
         
         try:
             # Modify resources in the container
@@ -106,7 +106,7 @@ class Container:
                 exit(1)
                 
             # Update resource stats before releasing
-            self.cluster.update_resource_stats()
+            # self.cluster.update_resource_stats()
             # Release resources back to the server with bounds checking
             self.server.cpu_real += delta_cpu
             self.server.ram_real += delta_ram
@@ -125,7 +125,7 @@ class Container:
         self.ram_alloc = self.current_request.ram_warm
 
         # Release the lock after resource update
-        self.server.resource_lock.release(lock_request)
+        # self.server.resource_lock.release(lock_request)
         # Clear the current request
         # finished_request = self.current_request
         # finished_request.end_service_time = self.env.now
@@ -144,11 +144,11 @@ class Container:
             print(f"{self.env.now:.2f} - {self} releasing resources (CPU:{self.cpu_alloc:.1f}, RAM:{self.ram_alloc:.1f}) from {self.server}")
         
         # Use the server's resource lock to prevent race conditions
-        lock_request = self.server.resource_lock.request()
-        yield lock_request
+        # lock_request = self.server.resource_lock.request()
+        # yield lock_request
         
         # Update resource stats before releasing
-        self.cluster.update_resource_stats()
+        # self.cluster.update_resource_stats()
         # Release all resources with bounds checking
         self.server.cpu_real += self.cpu_alloc
         self.server.ram_real += self.ram_alloc
@@ -163,7 +163,7 @@ class Container:
             print(f"FATAL ERROR: {self.env.now:.2f} - {self} released more resources than server capacity (CPU:{self.server.cpu_real:.1f}/{self.server.cpu_capacity:.1f}, RAM:{self.server.ram_real:.1f}/{self.server.ram_capacity:.1f})")
             exit(1)
 
-        self.server.resource_lock.release(lock_request)
+        # self.server.resource_lock.release(lock_request)
 
 
     def service_lifecycle(self):
@@ -179,7 +179,7 @@ class Container:
             # print(f"{self.env.now:.2f} - {request} waited for {request.waiting_time:.2f} time units")
         
         # First, have the container scale its resources for the request
-        scaling_result = yield self.env.process(self.scale_for_request())
+        scaling_result = self.scale_for_request()
         
         # If scaling failed, abort the service process
         if not scaling_result:
@@ -228,7 +228,7 @@ class Container:
             self.state = "Dead"  # Mark as expired
 
             # Mark container as dead and release resources
-            yield self.env.process(self.release_resources())
+            self.release_resources()
 
 
             # We don't need to explicitly remove from idle_containers store here,

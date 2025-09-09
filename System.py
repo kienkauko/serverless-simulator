@@ -11,12 +11,11 @@ from LoadBalancer import LoadBalancer  # Import our new LoadBalancer
 
 class System:
     """Orchestrates the simulation, managing servers, requests, and containers."""
-    def __init__(self, env, topology, clusters, use_topology=True, scheduler_class=FirstFitScheduler, verbose=False):
+    def __init__(self, env, topology, clusters, scheduler_class=FirstFitScheduler, verbose=False):
         self.env = env
         self.topology = topology  # New: topology instance
         self.clusters = clusters  # Dictionary of {cluster_name: cluster_instance}
         self.req_id_counter = itertools.count()
-        self.use_topology = use_topology  # Flag to control topology usage
         self.verbose = verbose  # Flag to control logging output
         
         # generate idle timeout for applications
@@ -41,17 +40,18 @@ class System:
             for app_id in APPLICATIONS:
                 self.app_idle_containers[cluster_name][app_id] = simpy.Store(env)
 
-    def request_generator(self):
+    def request_generator(self, node_intensity):
         """Generates requests for all defined applications."""
-        # Start request generators for each application type
-        # NOTE: multiple apps are turned off
+        # node_intensity is a percentage (0-100) that determines which level 3 nodes generate requests
         total_request = 0
         for app_id in APPLICATIONS:
             for node_id, node_data in self.topology.graph.nodes(data=True):
-                if node_data['level'] == 3:  # Assuming level 3 nodes are edge nodes
-                    arrival_rate = math.ceil(node_data['population'] * TRAFFIC_INTENSITY)
-                    total_request += arrival_rate
-                    self.env.process(self.app_request_generator(app_id, node_id, arrival_rate))
+                if node_data['level'] == 3:  # Only level 3 nodes can generate requests
+                    # Only generate requests with node_intensity probability
+                    if random.random() * 100 < node_intensity:
+                        arrival_rate = math.ceil(node_data['population'] * TRAFFIC_INTENSITY)
+                        total_request += arrival_rate
+                        self.env.process(self.app_request_generator(app_id, node_id, arrival_rate))
         print(f"Total expected request arrival rate: {total_request}.")
 
     def app_request_generator(self, app_id, node_id, arrival_rate):
@@ -71,7 +71,7 @@ class System:
             # Generate resource demands for this app
             resource_demand = generate_app_demands(app_id)
             
-            # For topology-aware simulations
+            # Generate the request
             request = Request(req_id, arrival_time, resource_demand, node_id, data_node = data_location, app_id=app_id)
             
             # Update statistics
@@ -92,7 +92,7 @@ class System:
         # paths = {}
         # target_clusters = []
         # Find cluster (DC or Edge DC) where request can be processed
-        link_found, target_clusters, failed_links_map = self.topology.find_cluster(request, self.use_topology, strategy='always_cloud')
+        link_found, target_clusters, failed_links_map = self.topology.find_cluster(request, strategy='always_cloud')
 
         if not link_found:
             self.update_end_statistics(request, 'link_failed', failed_links_map)
@@ -112,7 +112,7 @@ class System:
             self.update_end_statistics(request, 'success')
             # Release request and resources
             request.state = "Finished"
-            yield self.env.process(container.release_request()) # this process also puts container to idle cycle
+            container.release_request() # this process also puts container to idle cycle
             self.topology.remove_paths(request, target_clusters[cluster])
             # Put the container into the idle pool
             self.add_idle_container(container, cluster.name)

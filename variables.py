@@ -35,7 +35,7 @@ CLUSTER_CONFIG = {
 
 # Traffic intensity factor to scale arrival rates based on node population
 TRAFFIC_INTENSITY = 0.0001  # Adjust this factor to scale overall traffic
-
+NODE_INTENSITY = 100  # Percentage of level 3 nodes generating traffic (0-100)
 # Application definitions for heterogeneous workloads
 APPLICATIONS = {
     "app1": {
@@ -166,29 +166,54 @@ for app_id in APPLICATIONS:
     }
 
 # Function to generate resource demands for an app
+# def generate_app_demands(app_id):
+#     """Generate CPU and RAM demands for a specific application."""
+#     app_config = APPLICATIONS[app_id]
+    
+#     # Generate warm resource demands
+#     cpu_warm = app_config["min_warm_cpu"] if app_config["min_warm_cpu"] == app_config["max_warm_cpu"] else random.uniform(app_config["min_warm_cpu"], app_config["max_warm_cpu"])
+#     ram_warm = app_config["min_warm_ram"] if app_config["min_warm_ram"] == app_config["max_warm_ram"] else random.uniform(app_config["min_warm_ram"], app_config["max_warm_ram"])
+    
+#     # Generate request resource demands
+#     cpu_demand = max(cpu_warm, app_config["min_req_cpu"] if app_config["min_req_cpu"] == app_config["max_req_cpu"] else random.uniform(app_config["min_req_cpu"], app_config["max_req_cpu"]))
+#     ram_demand = max(ram_warm, app_config["min_req_ram"] if app_config["min_req_ram"] == app_config["max_req_ram"] else random.uniform(app_config["min_req_ram"], app_config["max_req_ram"]))
+    
+#     bandwidth_direct = app_config["bandwidth_direct"]
+#     bandwidth_indirect = app_config["bandwidth_indirect"]
+
+#     generated_resource = {
+#         "cpu_warm": cpu_warm,
+#         "ram_warm": ram_warm,
+#         "cpu_demand": cpu_demand,
+#         "ram_demand": ram_demand,
+#         "bandwidth_direct": bandwidth_direct,
+#         "bandwidth_indirect": bandwidth_indirect
+#     }
+
+#     return generated_resource
+
 def generate_app_demands(app_id):
     """Generate CPU and RAM demands for a specific application."""
     app_config = APPLICATIONS[app_id]
     
     # Generate warm resource demands
-    cpu_warm = app_config["min_warm_cpu"] if app_config["min_warm_cpu"] == app_config["max_warm_cpu"] else random.uniform(app_config["min_warm_cpu"], app_config["max_warm_cpu"])
-    ram_warm = app_config["min_warm_ram"] if app_config["min_warm_ram"] == app_config["max_warm_ram"] else random.uniform(app_config["min_warm_ram"], app_config["max_warm_ram"])
+    # cpu_warm = app_config["min_warm_cpu"] if app_config["min_warm_cpu"] == app_config["max_warm_cpu"] else random.uniform(app_config["min_warm_cpu"], app_config["max_warm_cpu"])
+    # ram_warm = app_config["min_warm_ram"] if app_config["min_warm_ram"] == app_config["max_warm_ram"] else random.uniform(app_config["min_warm_ram"], app_config["max_warm_ram"])
     
-    # Generate request resource demands
-    cpu_demand = max(cpu_warm, app_config["min_req_cpu"] if app_config["min_req_cpu"] == app_config["max_req_cpu"] else random.uniform(app_config["min_req_cpu"], app_config["max_req_cpu"]))
-    ram_demand = max(ram_warm, app_config["min_req_ram"] if app_config["min_req_ram"] == app_config["max_req_ram"] else random.uniform(app_config["min_req_ram"], app_config["max_req_ram"]))
+    # # Generate request resource demands
+    # cpu_demand = max(cpu_warm, app_config["min_req_cpu"] if app_config["min_req_cpu"] == app_config["max_req_cpu"] else random.uniform(app_config["min_req_cpu"], app_config["max_req_cpu"]))
+    # ram_demand = max(ram_warm, app_config["min_req_ram"] if app_config["min_req_ram"] == app_config["max_req_ram"] else random.uniform(app_config["min_req_ram"], app_config["max_req_ram"]))
     
-    bandwidth_direct = app_config["bandwidth_direct"]
-    bandwidth_indirect = app_config["bandwidth_indirect"]
+    # bandwidth_direct = app_config["bandwidth_direct"]
+    # bandwidth_indirect = app_config["bandwidth_indirect"]
 
     generated_resource = {
-        "cpu_warm": cpu_warm,
-        "ram_warm": ram_warm,
-        "cpu_demand": cpu_demand,
-        "ram_demand": ram_demand,
-        "bandwidth_direct": bandwidth_direct,
-        "bandwidth_indirect": bandwidth_indirect
+        "cpu_warm": app_config["min_warm_cpu"],
+        "ram_warm": app_config["min_warm_ram"],
+        "cpu_demand": app_config["min_req_cpu"],
+        "ram_demand": app_config["min_req_ram"],
+        "bandwidth_direct": app_config["bandwidth_direct"],
+        "bandwidth_indirect": app_config["bandwidth_indirect"]
     }
 
     return generated_resource
-

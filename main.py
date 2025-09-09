@@ -40,7 +40,7 @@ def track_progress(env, total_time):
             break
             
         # Check progress every small time step
-        yield env.timeout(total_time / 100)  # Check frequently but print rarely
+        yield env.timeout(total_time*2 / 100)  # Check frequently but print rarely
 
 # --- Simulation Setup and Run ---
 
@@ -71,20 +71,18 @@ for cluster_name, config in CLUSTER_CONFIG.items():
     clusters[cluster_name] = Cluster(env, cluster_name, config, verbose=VERBOSE)
 
 # Create topology from a file (only used if USE_TOPOLOGY is True)
-topology = None
-if USE_TOPOLOGY:
-    topology_file = "./topology/edge.json"
-    topology = Topology(topology_file, clusters)
+topology_file = "./topology/edge.json"
+topology = Topology(topology_file, clusters)
 
 # Select scheduler type - can be changed to BestFitScheduler for a different strategy
 scheduler_class = FirstFitScheduler
 # scheduler_class = BestFitScheduler  # Uncomment to use BestFitScheduler instead
 
 # Create System with topology, clusters, and scheduler
-system = System(env, topology, clusters, use_topology=USE_TOPOLOGY, scheduler_class=scheduler_class, verbose=VERBOSE)
+system = System(env, topology, clusters, scheduler_class=scheduler_class, verbose=VERBOSE)
 
 # Call the request generator directly without wrapping in env.process()
-system.request_generator()
+system.request_generator(NODE_INTENSITY)
 
 env.process(track_progress(env, SIM_TIME))
 

@@ -12,6 +12,10 @@ class Topology:
         # Initialize graph
         self.graph = nx.Graph()
         
+        # Add a path cache
+        self.path_cache = {}  # Format: (src, dst) -> path
+        self.path_latency_cache = {}  # Format: (tuple(path)) -> latency
+
         # Load edge data from JSON (includes both node and link data)
         with open(edge_path, 'r') as f:
             edge_data = json.load(f)
@@ -124,7 +128,7 @@ class Topology:
         
         # Find paths ordered by latency
         # paths = list(nx.shortest_simple_paths(self.graph, src, dst, weight='latency'))
-        path = self.find_hierachical_path(src, dst)
+        path = self.get_cached_path(src, dst)
         # Track failed links by level
         failed_links_by_level = {}
         
@@ -236,14 +240,14 @@ class Topology:
                         print(f"Error in finding path")
                         exit(1)
          
-    def get_path_latency(self, path):
-        """Calculate the total latency of a path"""
-        if not path or len(path) < 2:
-            return 0
+    # def get_path_latency(self, path):
+    #     """Calculate the total latency of a path"""
+    #     if not path or len(path) < 2:
+    #         return 0
             
-        total_latency = sum(self.graph.get_edge_data(path[i], path[i+1])['latency'] 
-                            for i in range(len(path)-1))
-        return total_latency
+    #     total_latency = sum(self.graph.get_edge_data(path[i], path[i+1])['latency'] 
+    #                         for i in range(len(path)-1))
+    #     return total_latency
     
     def implement_path(self, path, bw):
         """Reserve bandwidth along a path"""
@@ -252,8 +256,8 @@ class Topology:
             
         for i in range(len(path)-1):
             # Double check bandwidth availability
-            if self.graph.get_edge_data(path[i], path[i+1])['available_bandwidth'] < bw:
-                raise ValueError(f"Insufficient bandwidth on edge {path[i]}-{path[i+1]} for {bw} units")
+            # if self.graph.get_edge_data(path[i], path[i+1])['available_bandwidth'] < bw:
+            #     raise ValueError(f"Insufficient bandwidth on edge {path[i]}-{path[i+1]} for {bw} units")
                         
             self.graph[path[i]][path[i+1]]['available_bandwidth'] -= bw
 
@@ -277,14 +281,11 @@ class Topology:
         self.release_path(paths[0], request.bandwidth_direct)
         self.release_path(paths[1], request.bandwidth_indirect)
     
-    def find_cluster(self, request, use_topo, strategy='always_cloud'):
+    def find_cluster(self, request, strategy='always_cloud'):
         """Find appropriate clusters for request processing
            Returns: ( dict(cluster -> [path_direct, path_indirect]),
                      dict(cluster -> combined_failed_links) )
         """
-        if not use_topo:
-            return {}, {}
-
         list_paths = {}
         failed_links_map = {}
         found_direct = False
@@ -374,3 +375,39 @@ class Topology:
         return nearest_cluster, nearest_cluster_node
 
     # def get_edge_utilization(self, level):
+
+    # Add this new method
+    def get_cached_path(self, src, dst):
+        """Retrieve a path from cache or compute and cache it if not found"""
+        cache_key = (src, dst)
+        
+        # Check if path is in cache
+        if cache_key in self.path_cache:
+            return self.path_cache[cache_key]
+        
+        # Path not in cache, compute it
+        path = self.find_hierachical_path(src, dst)
+        # Store in cache
+        self.path_cache[cache_key] = path
+
+        return path
+    
+    # Add a similar cache for path latency
+    def get_path_latency(self, path):
+        """Calculate the total latency of a path with caching"""
+        if not path or len(path) < 2:
+            return 0
+        
+        # Create immutable key for cache
+        path_key = tuple(path)
+        
+        # Check if latency is cached
+        if path_key in self.path_latency_cache:
+            return self.path_latency_cache[path_key]
+        
+        # Else: Calculate latency
+        total_latency = sum(self.graph.get_edge_data(path[i], path[i+1])['latency'] 
+                           for i in range(len(path)-1))
+        # Cache the result
+        self.path_latency_cache[path_key] = total_latency
+        return total_latency
