@@ -107,22 +107,18 @@ class LoadBalancer:
             idle_container_pool = self.system.app_idle_containers[cluster.name][request.app_id]
             # Try to use an idle container if available
             # idle_container_found = False
-            while len(idle_container_pool.items) > 0:
-                container = yield self.env.process(self.assign_request_to_container(idle_container_pool, request, False))
+            if len(idle_container_pool) > 0:
+                container = self.assign_request_to_container(idle_container_pool, request, False)
                 if container:
                     return True, container, cluster
             
             # No idle containers available, let the scheduler handle container spawning
             scheduler = self.schedulers[cluster.name]
             # path = paths.get(selected_cluster) if paths else None
-            spawn_result = yield self.env.process(scheduler.spawn_container_for_request(request, self.system, cluster.name))            
+            spawn_result, container = yield self.env.process(scheduler.spawn_container_for_request(request, self.system, cluster.name))            
             
             if spawn_result:
-                # Wait for a container to appear in the idle pool (this will be our newly spawned container)
-                while True:
-                    container = yield self.env.process(self.assign_request_to_container(idle_container_pool, request, True))
-                    if container:
-                        return True, container, cluster
+                return True, container, cluster
             else:
                 if self.verbose:
                     print(f"{self.env.now:.2f} - No server with sufficient capacity in {cluster.name} cluster for {request}")
@@ -135,24 +131,12 @@ class LoadBalancer:
                 
     # Helper function to process container for request
     def assign_request_to_container(self, idle_container_pool, request, is_new_spawn=False):
-        get_op = idle_container_pool.get()
-        container = yield get_op
+        container = idle_container_pool.pop()
 
-        if container.state != "Idle":
-            if self.verbose:
-                print(f"WARNING: {self.env.now:.2f} - Retrieved container {container} is not idle. Discarding it.")
-            return None
+        if container.state != "Idle" or container.current_request is not None:
+            print(f"FATAL ERROR: {self.env.now:.2f} - Retrieved container {container} is not idle. Discarding it.")
+            exit(1)
             
-        # Add a small timeout to make this a generator function
-        # print(f"{self.env.now:.2f} - Start assigning request {request} to container {container}.")
-        # assign_time = random.expovariate(CONTAINER_ASSIGN_RATE)
-        # yield self.env.timeout(assign_time)
-        
-        # Final verification that container is still usable after assignment time
-        # if container.state == "Dead":
-        #     print(f"{self.env.now:.2f} - WARNING: Container {container} died during assignment process. Cannot use it.")
-        #     return None
-
         container.idle_since = -1  # No longer idle
         
         # If this container was idle, cancel its removal timeout

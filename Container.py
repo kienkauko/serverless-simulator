@@ -11,7 +11,7 @@ class Container:
 
     def __init__(self, env, system, cluster, server, request):
         self.env = env
-        self.state = "Idle" # Initial state
+        self.state = "Assigned" # Initial state
         self.id = next(Container.id_counter)
         self.system = system # Reference back to the main system
         self.server = server
@@ -20,7 +20,8 @@ class Container:
         self.ram_alloc = request.ram_warm
         self.cpu_reserve = request.cpu_demand
         self.ram_reserve = request.ram_demand
-        self.current_request = None
+        self.current_request = request  # Track the current request being served
+        self.time_out = None  # Time after which the container should be removed if idle
         self.idle_since = -1
         self.idle_timeout_process = None # SimPy process for idle timeout
         self.app_id = request.app_id # Application ID this container belongs to
@@ -58,8 +59,8 @@ class Container:
                 # Release the lock before returning
                 # self.server.resource_lock.release(lock_request)
                 # Reset the container state and clear the current_request since scaling failed
-                self.state = "Idle"
-                self.current_request = None
+                # self.state = "Idle"
+                # self.current_request = None
                 exit(1)
             
             if self.verbose:
@@ -171,37 +172,36 @@ class Container:
         # if not self.current_request:
         #     print(f"ERROR: {self.env.now:.2f} - service_lifecycle called for {self} with no request!")
         #     return
-        request = self.current_request
         
         # Calculate and record the waiting time
-        if request.waiting_start_time != -1:
-            request.waiting_time = self.env.now - request.waiting_start_time
-            # print(f"{self.env.now:.2f} - {request} waited for {request.waiting_time:.2f} time units")
+        if self.current_request.waiting_start_time != -1:
+            self.current_request.waiting_time = self.env.now - self.current_request.waiting_start_time
+            # print(f"{self.env.now:.2f} - {self.current_request} waited for {self.current_request.waiting_time:.2f} time units")
         
         # First, have the container scale its resources for the request
         scaling_result = self.scale_for_request()
         
         # If scaling failed, abort the service process
         if not scaling_result:
-            print(f"{self.env.now:.2f} - ERROR: {self} failed to scale for {request}. Aborting service.")
+            print(f"{self.env.now:.2f} - ERROR: {self} failed to scale for {self.current_request}. Aborting service.")
             exit(1)  # Exit if we can't scale the container
 
         self.state = "Active"
         # Update request state to "Running" when container is active
-        request.state = "Running"
+        self.current_request.state = "Running"
         if self.verbose:
-            print(f"{self.env.now:.2f} - {request} state changed to Running")
+            print(f"{self.env.now:.2f} - {self.current_request} state changed to Running")
 
         # Determine service rate based on app type
-        service_rate = APPLICATIONS[request.app_id]["service_rate"]
+        service_rate = APPLICATIONS[self.current_request.app_id]["service_rate"]
             
         service_time = random.expovariate(service_rate)
-        request.processing_time = service_time  # Track processing time for this request
+        self.current_request.processing_time = service_time  # Track processing time for this request
         if self.verbose:
-            print(f"{self.env.now:.2f} - {request} starting service in {self}. Expected duration: {service_time:.2f}")
+            print(f"{self.env.now:.2f} - {self.current_request} starting service in {self}. Expected duration: {service_time:.2f}")
         yield self.env.timeout(service_time)
         if self.verbose:
-            print(f"{self.env.now:.2f} - {request} completed service time.")
+            print(f"{self.env.now:.2f} - {self.current_request} completed service time.")
 
     def idle_lifecycle(self):
         """Manages the idle timeout for a container."""
@@ -209,23 +209,26 @@ class Container:
             print(f"{self.env.now:.2f} - {self} is now idle. Starting idle timeout.")
         try:
             # Use the scheduler to calculate the idle timeout
-            scheduler = self.system.schedulers[self.cluster.name]
-            idle_timeout = scheduler.calculate_idle_timeout(self)
+            # scheduler = self.system.schedulers[self.cluster.name]
+            # idle_timeout = scheduler.calculate_idle_timeout(self)
             
             if self.verbose:
-                print(f"{self.env.now:.2f} - Generated exponential idle timeout: {idle_timeout:.2f}s for {self}")
-            yield self.env.timeout(idle_timeout)
+                print(f"{self.env.now:.2f} - Generated exponential idle timeout: {self.time_out:.2f}s for {self}")
+            yield self.env.timeout(self.time_out)
             # If timeout completes without interruption, remove the container
             if self.verbose:
                 print(f"{self.env.now:.2f} - Idle timeout reached for {self}. Removing it.")
             request_stats['containers_removed_idle'] += 1
             app_stats[self.app_id]['containers_removed_idle'] += 1
             
+            self.state = "Dead"  # Mark as expired
+
             # Remove from server's list
             if self in self.server.containers:
                 self.server.containers.remove(self)
             
-            self.state = "Dead"  # Mark as expired
+            # Remove from idle container store in the system
+            self.system.app_idle_containers[self.cluster.name][self.app_id].remove(self)
 
             # Mark container as dead and release resources
             self.release_resources()

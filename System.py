@@ -38,7 +38,7 @@ class System:
         for cluster_name in clusters:
             self.app_idle_containers[cluster_name] = {}
             for app_id in APPLICATIONS:
-                self.app_idle_containers[cluster_name][app_id] = simpy.Store(env)
+                self.app_idle_containers[cluster_name][app_id] = []
 
     def request_generator(self, node_intensity):
         """Generates requests for all defined applications."""
@@ -99,8 +99,7 @@ class System:
             return
         # Delegate request handling to the LoadBalancer with viable cluster options
         handle_request_process = self.load_balancer.handle_request(request, target_clusters)
-        result = yield self.env.process(handle_request_process)
-        assignment_result, container, cluster = result
+        assignment_result, container, cluster = yield self.env.process(handle_request_process)
         
         # If assignment was successful, process the service
         if assignment_result:
@@ -115,17 +114,18 @@ class System:
             container.release_request() # this process also puts container to idle cycle
             self.topology.remove_paths(request, target_clusters[cluster])
             # Put the container into the idle pool
-            self.add_idle_container(container, cluster.name)
+            self.app_idle_containers[cluster_name][container.app_id].append(container)
+
         else:
             # print(f"{self.env.now:.2f} - Failed to assign request {request} to a container.")
             self.update_end_statistics(request, 'compute_failed')
 
-    def add_idle_container(self, container, cluster_name):
-        """Adds a container to the idle store for a specific cluster."""
-        if self.verbose:
-            print(f"{self.env.now:.2f} - Adding {container} to idle pool in {cluster_name} cluster.")
-        # Put container in the appropriate cluster's app idle pool
-        self.app_idle_containers[cluster_name][container.app_id].put(container)
+    # def add_idle_container(self, container, cluster_name):
+    #     """Adds a container to the idle store for a specific cluster."""
+    #     if self.verbose:
+    #         print(f"{self.env.now:.2f} - Adding {container} to idle pool in {cluster_name} cluster.")
+    #     # Put container in the appropriate cluster's app idle pool
+    #     self.app_idle_containers[cluster_name][container.app_id].append(container)
     
     def update_start_statistics(self, request):
         request_stats['generated'] += 1

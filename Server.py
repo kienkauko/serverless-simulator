@@ -99,16 +99,16 @@ class Server:
 
             # Spawning complete, create the container object with app_id and cluster
             container = Container(self.env, system, self.cluster, self, request)
-            container.state = "Idle"  # Explicitly mark as idle
+            # container.state = "Running"  # Explicitly mark as reserved
             self.containers.append(container) # Track container on server
             if self.verbose:
                 print(f"{self.env.now:.2f} - Spawn Complete: Created {container}")
             
             # Add the newly spawned container to the idle pool immediately
-            system.add_idle_container(container, cluster_name)
+            # system.add_idle_container(container, cluster_name)
             
             # Start its idle lifecycle - this will be interrupted when a request uses the container
-            container.idle_timeout_process = self.env.process(container.idle_lifecycle())
+            # container.idle_timeout_process = self.env.process(container.idle_lifecycle())
             
             return container  # Return the created container object
 

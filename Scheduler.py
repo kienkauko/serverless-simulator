@@ -79,10 +79,11 @@ class Scheduler(abc.ABC):
             app_stats[request.app_id]['container_spawns_initiated'] += 1
             
             # Start the spawn process (now passing cluster_name)
-            yield self.env.process(server.spawn_container_process(system, request, cluster_name))
-            return True
+            container = yield self.env.process(server.spawn_container_process(system, request, cluster_name))
+            container.time_out = self.calculate_idle_timeout(container)
+            return True, container
         else:
-            return False
+            return False, None
     
     def get_stats(self):
         """
@@ -151,7 +152,7 @@ class FirstFitScheduler(Scheduler):
         Returns:
             float: The timeout value in simulation time units
         """
-        self._stats['timeouts_set'] += 1
+        # self._stats['timeouts_set'] += 1
         return random.expovariate(1.0/self.idle_timeout_cluster[container.app_id])
     
     def get_stats(self):
