@@ -1,0 +1,16 @@
+nodeA,nodeB,10000,5,1
+nodeB,nodeC,10000,3,0.5
+nodeA,nodeC,10000,8,0.2
+nodeD,nodeA,8000,10,1.5
+nodeD,nodeE,12000,4,0.8
+nodeE,nodeF,9000,7,1.2
+nodeF,nodeC,15000,6,0.9
+nodeB,nodeE,7500,9,1.1
+nodeD,nodeF,11000,5,0.7
+nodeC,nodeE,9500,8,1.0
+nodeA,nodeF,8500,12,1.3
+nodeB,nodeD,10500,6,0.6
+nodeG,nodeA,9800,7,1.2
+nodeG,nodeC,8700,11,1.4
+nodeG,nodeE,11500,5,0.9
+nodeF,nodeG,10200,8,1.1

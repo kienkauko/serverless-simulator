@@ -11,16 +11,20 @@ class Scheduler(abc.ABC):
     that determine where to place containers and how to manage their lifecycle.
     """
     
-    def __init__(self, env, cluster):
+    def __init__(self, env, cluster, idle_timeout_cluster=None, verbose=False):
         """
         Initialize the scheduler.
         
         Args:
             env: SimPy environment
             cluster: Cluster instance containing servers
+            idle_timeout_cluster: Dictionary containing idle timeouts for each app
+            verbose: Flag to control logging output
         """
         self.env = env
         self.cluster = cluster
+        self.idle_timeout_cluster = idle_timeout_cluster
+        self.verbose = verbose
         
     @abc.abstractmethod
     def find_server_for_spawn(self, request):
@@ -62,18 +66,20 @@ class Scheduler(abc.ABC):
             Server instance or None if no suitable server was found
         """
         # No idle container; spawn a new one using a server from the cluster.
-        print(f"{self.env.now:.2f} - No idle container found for {request} in {cluster_name} cluster. Attempting to spawn.")
+        if self.verbose:
+            print(f"{self.env.now:.2f} - No idle container found for {request} in {cluster_name} cluster. Attempting to spawn.")
         
         # Use the scheduler to find a server
         server = self.find_server_for_spawn(request)
         
         if server:
-            print(f"{self.env.now:.2f} - Found potential {server} in {cluster_name} cluster for spawning container for {request}")
+            if self.verbose:
+                print(f"{self.env.now:.2f} - Found potential {server} in {cluster_name} cluster for spawning container for {request}")
             request_stats['container_spawns_initiated'] += 1
             app_stats[request.app_id]['container_spawns_initiated'] += 1
             
             # Start the spawn process (now passing cluster_name)
-            self.env.process(server.spawn_container_process(system, request, cluster_name))
+            yield self.env.process(server.spawn_container_process(system, request, cluster_name))
             return True
         else:
             return False
@@ -96,17 +102,17 @@ class FirstFitScheduler(Scheduler):
     idle timeouts with a configurable mean value.
     """
     
-    def __init__(self, env, cluster, idle_timeout_mean=2.0):
+    def __init__(self, env, cluster, idle_timeout_cluster, verbose=False):
         """
         Initialize the scheduler.
         
         Args:
             env: SimPy environment
             cluster: Cluster instance containing servers
-            idle_timeout_mean: Mean value for exponentially distributed idle timeouts
+            idle_timeout_cluster: Dict contains idle timeouts for each app
+            verbose: Flag to control logging output
         """
-        super().__init__(env, cluster)
-        self.idle_timeout_mean = idle_timeout_mean
+        super().__init__(env, cluster, idle_timeout_cluster, verbose)
         self._stats = {
             'placement_attempts': 0,
             'placement_successes': 0,
@@ -146,7 +152,7 @@ class FirstFitScheduler(Scheduler):
             float: The timeout value in simulation time units
         """
         self._stats['timeouts_set'] += 1
-        return random.expovariate(1.0/self.idle_timeout_mean)
+        return random.expovariate(1.0/self.idle_timeout_cluster[container.app_id])
     
     def get_stats(self):
         """
@@ -171,17 +177,19 @@ class BestFitScheduler(Scheduler):
     This implementation aims to consolidate workloads and minimize resource fragmentation.
     """
     
-    def __init__(self, env, cluster, idle_timeout_mean=2.0, idle_timeout_factor=1.0):
+    def __init__(self, env, cluster, idle_timeout_cluster=None, verbose=False, idle_timeout_mean=2.0, idle_timeout_factor=1.0):
         """
         Initialize the scheduler.
         
         Args:
             env: SimPy environment
             cluster: Cluster instance containing servers
+            idle_timeout_cluster: Dict contains idle timeouts for each app
+            verbose: Flag to control logging output
             idle_timeout_mean: Base mean value for exponentially distributed idle timeouts
             idle_timeout_factor: Factor to adjust timeouts based on system load
         """
-        super().__init__(env, cluster)
+        super().__init__(env, cluster, idle_timeout_cluster, verbose)
         self.idle_timeout_mean = idle_timeout_mean
         self.idle_timeout_factor = idle_timeout_factor
         self._stats = {

@@ -2,13 +2,13 @@ import random
 # --- Configuration ---
 RANDOM_SEED = 42
 SIM_TIME = 500  # Simulation time units (e.g., seconds)
-
+VERBOSE = False  # Set to True to enable detailed logging
 
 # Container Parameters
-CONTAINER_ASSIGN_RATE = 1000.0 # Average rate for request assignment (very fast)
+CONTAINER_ASSIGN_RATE = 1000000.0 # Average rate for request assignment (very fast)
 
 # Topology configuration
-USE_TOPOLOGY = False  # New flag to enable/disable topology routing
+USE_TOPOLOGY = True  # Enable topology routing
 
 # --- Multi-Cluster Configuration ---
 # Define the parameters for each cluster
@@ -18,26 +18,28 @@ CLUSTER_CONFIG = {
         "num_servers": 2,
         "server_cpu": 100.0,
         "server_ram": 100.0,
+        "power_max": 25,
+        "power_min": 5,
         "spawn_time_factor": 1.0  # Edge spawn time multiplier (slower)
     },
-    # "cloud": {
-    #     "node": "nodeB",
-    #     "num_servers": 4,
-    #     "server_cpu": 200.0,
-    #     "server_ram": 200.0,
-    #     "spawn_time_factor": 0.7  # Cloud spawn time multiplier (faster)
-    # }
+    "cloud": {
+        "node": "12876",
+        "num_servers": 200,
+        "server_cpu": 200.0,
+        "server_ram": 200.0,
+        "power_max": 150,
+        "power_min": 50,
+        "spawn_time_factor": 0.5  # Cloud spawn time multiplier (faster)
+    }
 }
 
-# System Parameters
-# NUM_SERVERS = 2
-# SERVER_CPU_CAPACITY = 100.0 # %
-# SERVER_RAM_CAPACITY = 100.0 # %
+# Traffic intensity factor to scale arrival rates based on node population
+TRAFFIC_INTENSITY = 0.0001  # Adjust this factor to scale overall traffic
 
 # Application definitions for heterogeneous workloads
 APPLICATIONS = {
     "app1": {
-        "arrival_rate": 5.0,  # Requests per time unit
+        # "arrival_rate": 50.0,  # Requests per time unit
         "service_rate": 2.0,  # Service completions per time unit
         "base_spawn_time": 5.0,  # Base time units to spawn a container (modified by cluster factor)
         "min_warm_cpu": 0.5,  # Minimum CPU for warm container
@@ -48,22 +50,28 @@ APPLICATIONS = {
         "max_req_cpu": 50.0,  # Maximum CPU demand for request
         "min_req_ram": 20.0,  # Minimum RAM demand for request
         "max_req_ram": 20.0,  # Maximum RAM demand for request
-        "bandwidth_demand": 5.0,  # Bandwidth demand for this application
+        "bandwidth_direct": 5.0,  # Bandwidth demand for this application
+        "bandwidth_indirect": 1.0,  # Bandwidth demand for this application
+        "data_location": "12876",  # Location of data for this application - Cloud node
     },
-    "app2": {
-        "arrival_rate": 3.0,
-        "service_rate": 1.5,
-        "base_spawn_time": 7.0,
-        "min_warm_cpu": 1.0,
-        "max_warm_cpu": 1.0,
-        "min_warm_ram": 8.0,
-        "max_warm_ram": 8.0,
-        "min_req_cpu": 40.0,
-        "max_req_cpu": 40.0,
-        "min_req_ram": 40.0,
-        "max_req_ram": 40.0,
-        "bandwidth_demand": 10.0,  # Bandwidth demand for this application
-    },
+    # "app2": {
+    #     "arrival_rate": 30.0,
+    #     "service_rate": 1.5,
+    #     "base_spawn_time": 7.0,
+    #     "min_warm_cpu": 1.0,
+    #     "max_warm_cpu": 1.0,
+    #     "min_warm_ram": 8.0,
+    #     "max_warm_ram": 8.0,
+    #     "min_req_cpu": 40.0,
+    #     "max_req_cpu": 40.0,
+    #     "min_req_ram": 40.0,
+    #     "max_req_ram": 40.0,
+    #     "bandwidth_direct": 10.0,  # Bandwidth demand for this application
+    #     "bandwidth_indirect": 1.0,  # Bandwidth demand for this application
+    #     "data_location": "nodeB",  # Location of data for this application
+
+
+    # },
     # "app3": {
     #     "arrival_rate": 5.0,
     #     "service_rate": 1.0,
@@ -76,7 +84,7 @@ APPLICATIONS = {
     #     "max_req_cpu": 70.0,
     #     "min_req_ram": 60.0,
     #     "max_req_ram": 70.0,
-    #     "bandwidth_demand": 15.0,  # Bandwidth demand for this application
+    #     "bandwidth_direct": 15.0,  # Bandwidth demand for this application
     # }
 }
 
@@ -93,6 +101,13 @@ request_stats = {
     'containers_reused': 0,
     'containers_removed_idle': 0,
     'reuse_oom_failures': 0, # Out Of Memory/CPU when trying to activate reused container
+    'bocked_no_path_level_3-3': 0, # No path between level 3 nodes
+    'bocked_no_path_level_3-2': 0, # No path between level 3 and level 2 nodes
+    'bocked_no_path_level_2-2': 0, # No path between level 2 nodes
+    'bocked_no_path_level_2-1': 0, # No path between level 2 and level 1 nodes
+    'bocked_no_path_level_1-1': 0, # No path between level 1 nodes
+    'bocked_no_path_level_1-0': 0, # No path between level 1 and level 0 nodes
+    'bocked_no_path_level_0-0': 0, # No path between level 0 nodes
 }
 
 # App-specific statistics
@@ -110,8 +125,24 @@ for app_id in APPLICATIONS:
         'containers_reused': 0,
         'containers_removed_idle': 0,
         'reuse_oom_failures': 0,
+        'bocked_no_path_level_3-3': 0, # No path between level 3 nodes
+        'bocked_no_path_level_3-2': 0, # No path between level 3 and level 2 nodes
+        'bocked_no_path_level_2-2': 0, # No path between level 2 nodes
+        'bocked_no_path_level_2-1': 0, # No path between level 2 and level 1 nodes
+        'bocked_no_path_level_1-1': 0, # No path between level 1 nodes
+        'bocked_no_path_level_1-0': 0, # No path between level 1 and level 0 nodes
+        'bocked_no_path_level_0-0': 0, # No path between level 0 nodes
     }
 
+# Cluster-specific statistics
+cluster_stats = {}
+for cluster_name in CLUSTER_CONFIG:
+    cluster_stats[cluster_name] = {
+        'cpu_real': [],
+        'ram_real': [],
+        'cpu_reserve': [],
+        'ram_reserve': [],
+    }
 # New dictionary to track latency metrics (in time units)
 latency_stats = {
     'total_latency': 0.0,
@@ -147,4 +178,17 @@ def generate_app_demands(app_id):
     cpu_demand = max(cpu_warm, app_config["min_req_cpu"] if app_config["min_req_cpu"] == app_config["max_req_cpu"] else random.uniform(app_config["min_req_cpu"], app_config["max_req_cpu"]))
     ram_demand = max(ram_warm, app_config["min_req_ram"] if app_config["min_req_ram"] == app_config["max_req_ram"] else random.uniform(app_config["min_req_ram"], app_config["max_req_ram"]))
     
-    return cpu_warm, ram_warm, cpu_demand, ram_demand
+    bandwidth_direct = app_config["bandwidth_direct"]
+    bandwidth_indirect = app_config["bandwidth_indirect"]
+
+    generated_resource = {
+        "cpu_warm": cpu_warm,
+        "ram_warm": ram_warm,
+        "cpu_demand": cpu_demand,
+        "ram_demand": ram_demand,
+        "bandwidth_direct": bandwidth_direct,
+        "bandwidth_indirect": bandwidth_indirect
+    }
+
+    return generated_resource
+

@@ -1,10 +1,9 @@
 import simpy
+import math
 import random
 import itertools
 from variables import *
 from Request import Request
-from Container import Container 
-from Topology import Topology
 from Scheduler import FirstFitScheduler  # Import our new scheduler
 from LoadBalancer import LoadBalancer  # Import our new LoadBalancer
 
@@ -12,20 +11,26 @@ from LoadBalancer import LoadBalancer  # Import our new LoadBalancer
 
 class System:
     """Orchestrates the simulation, managing servers, requests, and containers."""
-    def __init__(self, env, topology, clusters, use_topology=True, scheduler_class=FirstFitScheduler):
+    def __init__(self, env, topology, clusters, use_topology=True, scheduler_class=FirstFitScheduler, verbose=False):
         self.env = env
         self.topology = topology  # New: topology instance
         self.clusters = clusters  # Dictionary of {cluster_name: cluster_instance}
         self.req_id_counter = itertools.count()
         self.use_topology = use_topology  # Flag to control topology usage
+        self.verbose = verbose  # Flag to control logging output
         
+        # generate idle timeout for applications
+        # NOTE: later custom timeout per application per cluster can be implemented
+        self.idle_timeout_cluster = {}
+        for app_id in APPLICATIONS:
+            self.idle_timeout_cluster[app_id] = 2
         # Initialize schedulers for each cluster
         self.schedulers = {}
         for cluster_name, cluster in clusters.items():
-            self.schedulers[cluster_name] = scheduler_class(env, cluster)
+            self.schedulers[cluster_name] = scheduler_class(env, cluster, self.idle_timeout_cluster, verbose=self.verbose)
         
         # Initialize the LoadBalancer (now handling multiple clusters)
-        self.load_balancer = LoadBalancer(env, self, self.schedulers)
+        self.load_balancer = LoadBalancer(env, self, self.schedulers, verbose=self.verbose)
         
         # For applications containers (now per cluster)
         self.app_idle_containers = {}
@@ -39,14 +44,21 @@ class System:
     def request_generator(self):
         """Generates requests for all defined applications."""
         # Start request generators for each application type
+        # NOTE: multiple apps are turned off
+        total_request = 0
         for app_id in APPLICATIONS:
-            self.env.process(self.app_request_generator(app_id))
+            for node_id, node_data in self.topology.graph.nodes(data=True):
+                if node_data['level'] == 3:  # Assuming level 3 nodes are edge nodes
+                    arrival_rate = math.ceil(node_data['population'] * TRAFFIC_INTENSITY)
+                    total_request += arrival_rate
+                    self.env.process(self.app_request_generator(app_id, node_id, arrival_rate))
+        print(f"Total expected request arrival rate: {total_request}.")
 
-    def app_request_generator(self, app_id):
+    def app_request_generator(self, app_id, node_id, arrival_rate):
         """Generates requests for a specific application according to its Poisson process."""
         app_config = APPLICATIONS[app_id]
-        arrival_rate = app_config["arrival_rate"]
-        
+        data_location = app_config["data_location"]
+        # No defined period, keep generating until simulation time ends
         while True:
             # Time between arrivals (Exponential distribution for Poisson process)
             inter_arrival_time = random.expovariate(arrival_rate)
@@ -57,21 +69,16 @@ class System:
             arrival_time = self.env.now
             
             # Generate resource demands for this app
-            cpu_warm, ram_warm, cpu_demand, ram_demand = generate_app_demands(app_id)
+            resource_demand = generate_app_demands(app_id)
             
-            # For topology-aware simulations, assign a random node from the topology
-            origin = None
-            if self.use_topology:
-                origin = random.choice(list(self.topology.graph.nodes))
-                
-            request = Request(req_id, arrival_time, cpu_demand, ram_demand, cpu_warm, ram_warm, 
-                             origin_node=origin, app_id=app_id)
+            # For topology-aware simulations
+            request = Request(req_id, arrival_time, resource_demand, node_id, data_node = data_location, app_id=app_id)
             
             # Update statistics
-            request_stats['generated'] += 1
-            app_stats[app_id]['generated'] += 1
-            
-            print(f"{self.env.now:.2f} - Request Generated: {request}")
+            self.update_start_statistics(request)
+
+            if self.verbose:
+                print(f"{self.env.now:.2f} - Request Generated: {request}")
 
             # Start the handling process for this request
             self.env.process(self.handle_request(request))
@@ -82,69 +89,87 @@ class System:
         # Start measuring waiting time
         request.waiting_start_time = self.env.now
         
-        paths = {}
-        target_clusters = []
-        
-        # If using topology, find viable paths to each cluster
-        if self.use_topology:
-            # Get app-specific bandwidth demand
-            bandwidth_demand = APPLICATIONS[request.app_id]["bandwidth_demand"]
-            
-            # Find paths to each cluster from the origin node
-            for cluster_name, cluster in self.clusters.items():
-                path = self.topology.find_path(request.origin_node, cluster.node, bandwidth_demand)
-                if path:
-                    paths[cluster_name] = path
-                    target_clusters.append(cluster_name)
-                    
-                    # Calculate prop delay for this path (for metrics)
-                    prop = sum(self.topology.graph.get_edge_data(path[i], path[i+1])['latency'] 
-                                for i in range(len(path)-1))
-                    # We'll set this on the request if this cluster is chosen
-                    request.potential_prop_delays[cluster_name] = 2 * prop
-            
-            if not target_clusters:
-                print(f"{self.env.now:.2f} - BLOCK: No feasible path from {request.origin_node} to any cluster for {request}")
-                request_stats['blocked_no_path'] += 1
-                app_stats[request.app_id]['blocked_no_path'] += 1
-                return
-                
-            # Sort target_clusters by propagation delay (lowest first)
-            target_clusters.sort(key=lambda cluster_name: request.potential_prop_delays[cluster_name])
-            print(f"{self.env.now:.2f} - Ordered clusters by propagation delay for {request}: {target_clusters}")
-        else:
-            # No topology routing - all clusters are viable targets
-            target_clusters = list(self.clusters.keys())
-            # Set propagation delay to 0 for all clusters
-            for cluster_name in target_clusters:
-                request.potential_prop_delays[cluster_name] = 0.0
+        # paths = {}
+        # target_clusters = []
+        # Find cluster (DC or Edge DC) where request can be processed
+        link_found, target_clusters, failed_links_map = self.topology.find_cluster(request, self.use_topology, strategy='always_cloud')
 
+        if not link_found:
+            self.update_end_statistics(request, 'link_failed', failed_links_map)
+            return
         # Delegate request handling to the LoadBalancer with viable cluster options
-        process = self.load_balancer.handle_request(request, target_clusters, paths)
-        result = yield self.env.process(process)
-        assignment_result, container, selected_cluster = result
+        handle_request_process = self.load_balancer.handle_request(request, target_clusters)
+        result = yield self.env.process(handle_request_process)
+        assignment_result, container, cluster = result
         
         # If assignment was successful, process the service
         if assignment_result:
-            # Set the actual propagation delay based on the selected cluster
-            request.prop_delay = request.potential_prop_delays[selected_cluster]
-            
-            # Get the path to the selected cluster
-            path = None
-            if self.use_topology:
-                path = paths.get(selected_cluster, None)
-                # Get app-specific bandwidth demand for release
-                bandwidth_demand = APPLICATIONS[request.app_id]["bandwidth_demand"]
-                self.topology.implement_path(path, bandwidth_demand)
-
-            print(f"{self.env.now:.2f} - The idle state of the container outside is {container.idle_timeout_process}")
-            self.env.process(container.service_lifecycle(path, self.topology, self.use_topology))
+            # Start using topology paths
+            self.topology.make_paths(request, target_clusters[cluster])
+            # Start the service lifecycle 
+            yield self.env.process(container.service_lifecycle())
+            # Update statistics
+            self.update_end_statistics(request, 'success')
+            # Release request and resources
+            request.state = "Finished"
+            yield self.env.process(container.release_request()) # this process also puts container to idle cycle
+            self.topology.remove_paths(request, target_clusters[cluster])
+            # Put the container into the idle pool
+            self.add_idle_container(container, cluster.name)
         else:
-            print(f"{self.env.now:.2f} - Failed to assign request {request} to a container.")
+            # print(f"{self.env.now:.2f} - Failed to assign request {request} to a container.")
+            self.update_end_statistics(request, 'compute_failed')
 
     def add_idle_container(self, container, cluster_name):
         """Adds a container to the idle store for a specific cluster."""
-        print(f"{self.env.now:.2f} - Adding {container} to idle pool in {cluster_name} cluster.")
-        
+        if self.verbose:
+            print(f"{self.env.now:.2f} - Adding {container} to idle pool in {cluster_name} cluster.")
         # Put container in the appropriate cluster's app idle pool
         self.app_idle_containers[cluster_name][container.app_id].put(container)
+    
+    def update_start_statistics(self, request):
+        request_stats['generated'] += 1
+        app_stats[request.app_id]['generated'] += 1
+
+    def update_end_statistics(self, request, type, link_failed_map=None):
+        if type == 'compute_failed':
+            request_stats['blocked_no_server_capacity'] += 1
+            app_stats[request.app_id]['blocked_no_server_capacity'] += 1
+
+        elif type == 'link_failed':
+            request_stats['blocked_no_path'] += 1
+            app_stats[request.app_id]['blocked_no_path'] += 1
+            for value in link_failed_map.values():
+                request_stats['bocked_no_path_level_3-3'] += value.get('3-3', 0)
+                request_stats['bocked_no_path_level_3-2'] += value.get('3-2', 0)
+                request_stats['bocked_no_path_level_2-2'] += value.get('2-2', 0)
+                request_stats['bocked_no_path_level_2-1'] += value.get('2-1', 0)
+                request_stats['bocked_no_path_level_1-1'] += value.get('1-1', 0)
+                request_stats['bocked_no_path_level_1-0'] += value.get('1-0', 0)
+                request_stats['bocked_no_path_level_0-0'] += value.get('0-0', 0)
+        else:
+            # Service finished
+            request_stats['processed'] += 1
+            app_stats[request.app_id]['processed'] += 1
+            
+            # Compute latencies: sum of propagation, spawn, and processing times
+            total_latency = request.prop_delay + request.spawn_time + request.processing_time
+            
+            # Update global latency stats
+            latency_stats['total_latency'] += total_latency
+            latency_stats['propagation_delay'] += request.prop_delay
+            latency_stats['spawning_time'] += request.spawn_time
+            latency_stats['processing_time'] += request.processing_time
+            latency_stats['waiting_time'] += request.waiting_time  # Add waiting time to stats
+            latency_stats['count'] += 1
+            
+            # Update app-specific latency stats
+            app_latency_stats[request.app_id]['total_latency'] += total_latency
+            app_latency_stats[request.app_id]['propagation_delay'] += request.prop_delay
+            app_latency_stats[request.app_id]['spawning_time'] += request.spawn_time
+            app_latency_stats[request.app_id]['processing_time'] += request.processing_time
+            app_latency_stats[request.app_id]['waiting_time'] += request.waiting_time  # Add app-specific waiting time
+            app_latency_stats[request.app_id]['count'] += 1
+        
+        
+       

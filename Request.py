@@ -1,18 +1,23 @@
 class Request:
     """Represents a request arriving at the system."""
-    def __init__(self, req_id, arrival_time, cpu_demand, ram_demand, warm_cpu, warm_ram, origin_node=None, app_id=None):
-        self.cpu_warm = warm_cpu
-        self.ram_warm = warm_ram
+    def __init__(self, req_id, arrival_time, resource_demand, origin_node=None, data_node=None, app_id=None):
         self.id = req_id
         self.arrival_time = arrival_time
-        self.cpu_demand = cpu_demand
-        self.ram_demand = ram_demand
+        self.cpu_warm = resource_demand["cpu_warm"]
+        self.ram_warm = resource_demand["ram_warm"]
+        self.cpu_demand = resource_demand["cpu_demand"]
+        self.ram_demand = resource_demand["ram_demand"]
+        self.bandwidth_direct = resource_demand["bandwidth_direct"] # bw from user
+        self.bandwidth_indirect = resource_demand["bandwidth_indirect"] # bw from data 
+        self.data_node = data_node
         self.start_service_time = -1 # Mark when service starts
         self.end_service_time = -1   # Mark when service ends
         self.origin_node = origin_node  # New: the topology node from which the request is sent
+        self.local_edge_cluster = None  # New: the local edge cluster if applicable
         # New: initialize spawn time and propagation delay
         self.spawn_time = 0.0
         self.prop_delay = 0.0
+        self.processing_time = 0.0  # Track processing time for this request
         # Store potential propagation delays for each cluster
         self.potential_prop_delays = {}
         self.app_id = app_id  # New: application ID this request belongs to
@@ -24,5 +29,5 @@ class Request:
     def __str__(self):
         app_info = f" [App: {self.app_id}]" if self.app_id else ""
         cluster_info = f" [Cluster: {self.assigned_cluster}]" if self.assigned_cluster else ""
-        state_info = f" [State: {self.state}]"
-        return f"Req_{self.id}{state_info} from {self.origin_node}{app_info}{cluster_info}"
+        # state_info = f" [State: {self.state}]"
+        return f"Req_{self.id} from {self.origin_node}{app_info}{cluster_info}"

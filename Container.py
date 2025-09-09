@@ -9,27 +9,28 @@ class Container:
     # Using itertools for unique container IDs across the system
     id_counter = itertools.count()
 
-    def __init__(self, env, system, server, cpu_alloc, ram_alloc, cpu_reserve, ram_reserve, app_id=None, cluster_name=None):
+    def __init__(self, env, system, cluster, server, request):
         self.env = env
         self.state = "Idle" # Initial state
         self.id = next(Container.id_counter)
         self.system = system # Reference back to the main system
         self.server = server
-        self.cpu_alloc = cpu_alloc
-        self.ram_alloc = ram_alloc
-        self.cpu_reserve = cpu_reserve
-        self.ram_reserve = ram_reserve
+        self.cluster = cluster
+        self.cpu_alloc = request.cpu_warm
+        self.ram_alloc = request.ram_warm
+        self.cpu_reserve = request.cpu_demand
+        self.ram_reserve = request.ram_demand
         self.current_request = None
         self.idle_since = -1
         self.idle_timeout_process = None # SimPy process for idle timeout
-        self.app_id = app_id # Application ID this container belongs to
-        self.cluster_name = cluster_name # Cluster this container belongs to
+        self.app_id = request.app_id # Application ID this container belongs to
+        self.verbose = system.verbose  # Get verbose flag from system
+        # self.cluster_name = cluster_name # Cluster this container belongs to
 
     def __str__(self):
         state = f"Serving {self.current_request.id}" if self.current_request else f"Idle since {self.idle_since:.2f}"
         app_info = f" [App: {self.app_id}]" if self.app_id else ""
-        cluster_info = f" [Cluster: {self.cluster_name}]" if self.cluster_name else ""
-        return f"Cont_{self.id}(on Srv_{self.server.id}, State: {state}){app_info}{cluster_info}"
+        return f"Cont_{self.id}(on Srv_{self.server.id}, State: {state}){app_info}"
 
     def scale_for_request(self):
         """Scales container resources for the current request."""
@@ -42,16 +43,15 @@ class Container:
         # Modify resources in the container
         delta_cpu = request.cpu_demand - self.cpu_alloc
         delta_ram = request.ram_demand - self.ram_alloc
-        print(f"{self.env.now:.2f} - {self} request asks for more resources (+CPU:{delta_cpu:.1f}, +RAM:{delta_ram:.1f})")
+        if self.verbose:
+            print(f"{self.env.now:.2f} - {self} request asks for more resources (+CPU:{delta_cpu:.1f}, +RAM:{delta_ram:.1f})")
         
         # Use the server's resource lock to prevent race conditions - request the lock
         lock_request = self.server.resource_lock.request()
         yield lock_request
-        
-        try:
-            # Verify the server has enough resources before proceeding
-            # print(f"{self.env.now:.2f} - current server resources: {self.server}")
-            
+        # Update resource stats before allocation
+        self.cluster.update_resource_stats()
+        try:            
             # Attempt to allocate the new resources
             if not self.server.allocate_resources(delta_cpu, delta_ram):
                 print(f"{self.env.now:.2f} - ERROR: Insufficient resources on {self.server} for {request}")
@@ -62,7 +62,8 @@ class Container:
                 self.current_request = None
                 exit(1)
             
-            print(f"{self.env.now:.2f} - {self} allocated resources (CPU:{delta_cpu:.1f}, RAM:{delta_ram:.1f}) for {request} on {self.server}")
+            if self.verbose:
+                print(f"{self.env.now:.2f} - {self} allocated resources (CPU:{delta_cpu:.1f}, RAM:{delta_ram:.1f}) for {request} on {self.server}")
             
             # Release the lock after successful allocation
             self.server.resource_lock.release(lock_request)
@@ -88,23 +89,25 @@ class Container:
     def release_request(self):
         """Releases the finished request and marks the container as idle."""
         if not self.current_request:
-            print("abc")
-            return # Nothing to release
+            print("FATAL ERROR: Container Class: release_request called with no current request!")
+            exit(1) # Nothing to release
 
-# Use the server's resource lock to prevent race conditions
+        # Use the server's resource lock to prevent race conditions
         lock_request = self.server.resource_lock.request()
         yield lock_request
         
         try:
-        # Modify resources in the container
+            # Modify resources in the container
             delta_cpu = self.cpu_alloc - self.current_request.cpu_warm
             delta_ram = self.ram_alloc - self.current_request.ram_warm
 
-            if(delta_cpu < 0 or delta_ram < 0):
+            if(delta_cpu <= 0 or delta_ram <= 0):
                 print(f"FATAL ERROR: {self.env.now:.2f} - {self} trying to release more resources than allocated (CPU:{delta_cpu:.1f}, RAM:{delta_ram:.1f})")
                 exit(1)
-
-        # Release resources back to the server with bounds checking
+                
+            # Update resource stats before releasing
+            self.cluster.update_resource_stats()
+            # Release resources back to the server with bounds checking
             self.server.cpu_real += delta_cpu
             self.server.ram_real += delta_ram
             if(self.server.cpu_real > self.server.cpu_capacity or self.server.ram_real > self.server.ram_capacity):
@@ -123,24 +126,29 @@ class Container:
 
         # Release the lock after resource update
         self.server.resource_lock.release(lock_request)
-
         # Clear the current request
-        finished_request = self.current_request
-        finished_request.end_service_time = self.env.now
-        print(f"{self.env.now:.2f} - {finished_request} finished service in {self}. Duration: {finished_request.end_service_time - finished_request.start_service_time:.2f}")
-        print(f"{self.env.now:.2f} - {finished_request} releasing resources (CPU:{delta_cpu:.1f}, RAM:{delta_ram:.1f}) from {self.server}")
-        
+        # finished_request = self.current_request
+        # finished_request.end_service_time = self.env.now
+        # print(f"{self.env.now:.2f} - {finished_request} finished service in {self}. Duration: {finished_request.end_service_time - finished_request.start_service_time:.2f}")
+        # print(f"{self.env.now:.2f} - {finished_request} releasing resources (CPU:{delta_cpu:.1f}, RAM:{delta_ram:.1f}) from {self.server}")
+        # Update the container's state
+        self.state = "Idle"
+        self.idle_since = self.env.now
         self.current_request = None
+        # Start the idle timeout process
+        self.idle_timeout_process = self.env.process(self.idle_lifecycle())
 
     def release_resources(self):
         """Returns allocated CPU and RAM resources back to the server."""
-        print(f"{self.env.now:.2f} - {self} releasing resources (CPU:{self.cpu_alloc:.1f}, RAM:{self.ram_alloc:.1f}) from {self.server}")
+        if self.verbose:
+            print(f"{self.env.now:.2f} - {self} releasing resources (CPU:{self.cpu_alloc:.1f}, RAM:{self.ram_alloc:.1f}) from {self.server}")
         
         # Use the server's resource lock to prevent race conditions
         lock_request = self.server.resource_lock.request()
         yield lock_request
         
-
+        # Update resource stats before releasing
+        self.cluster.update_resource_stats()
         # Release all resources with bounds checking
         self.server.cpu_real += self.cpu_alloc
         self.server.ram_real += self.ram_alloc
@@ -158,7 +166,7 @@ class Container:
         self.server.resource_lock.release(lock_request)
 
 
-    def service_lifecycle(self, path, topology, use_topology):
+    def service_lifecycle(self):
         """Simulates the request processing time within a container."""
         # if not self.current_request:
         #     print(f"ERROR: {self.env.now:.2f} - service_lifecycle called for {self} with no request!")
@@ -175,86 +183,41 @@ class Container:
         
         # If scaling failed, abort the service process
         if not scaling_result:
-            print(f"{self.env.now:.2f} - Failed to scale {self} for {request}. Aborting service.")
-            # Release network resources if using topology
-            if use_topology and path:
-                bandwidth_demand = APPLICATIONS[request.app_id]["bandwidth_demand"]
-                topology.release_path(path, bandwidth_demand)
+            print(f"{self.env.now:.2f} - ERROR: {self} failed to scale for {request}. Aborting service.")
             exit(1)  # Exit if we can't scale the container
 
         self.state = "Active"
         # Update request state to "Running" when container is active
         request.state = "Running"
-        print(f"{self.env.now:.2f} - {request} state changed to Running")
+        if self.verbose:
+            print(f"{self.env.now:.2f} - {request} state changed to Running")
 
         # Determine service rate based on app type
         service_rate = APPLICATIONS[request.app_id]["service_rate"]
             
         service_time = random.expovariate(service_rate)
-        print(f"{self.env.now:.2f} - {request} starting service in {self}. Expected duration: {service_time:.2f}")
+        request.processing_time = service_time  # Track processing time for this request
+        if self.verbose:
+            print(f"{self.env.now:.2f} - {request} starting service in {self}. Expected duration: {service_time:.2f}")
         yield self.env.timeout(service_time)
-
-        # Service finished
-        request_stats['processed'] += 1
-        app_stats[request.app_id]['processed'] += 1
-            
-        # Compute latencies: sum of propagation, spawn, and processing times
-        processing_time = service_time
-        total_latency = request.prop_delay + request.spawn_time + processing_time
-        
-        # Update global latency stats
-        latency_stats['total_latency'] += total_latency
-        latency_stats['propagation_delay'] += request.prop_delay
-        latency_stats['spawning_time'] += request.spawn_time
-        latency_stats['processing_time'] += processing_time
-        latency_stats['waiting_time'] += request.waiting_time  # Add waiting time to stats
-        latency_stats['count'] += 1
-        
-        # Update app-specific latency stats
-        app_latency_stats[request.app_id]['total_latency'] += total_latency
-        app_latency_stats[request.app_id]['propagation_delay'] += request.prop_delay
-        app_latency_stats[request.app_id]['spawning_time'] += request.spawn_time
-        app_latency_stats[request.app_id]['processing_time'] += processing_time
-        app_latency_stats[request.app_id]['waiting_time'] += request.waiting_time  # Add app-specific waiting time
-        app_latency_stats[request.app_id]['count'] += 1
-            
-        print(f"{self.env.now:.2f} - {request} latencies recorded: Total {total_latency:.2f}, "
-              f"Propagation {request.prop_delay:.2f}, Spawn {request.spawn_time:.2f}, "
-              f"Processing {processing_time:.2f}, Waiting {request.waiting_time:.2f}")
-
-        # Update request state to "Finished" before releasing it
-        request.state = "Finished"
-        print(f"{self.env.now:.2f} - {request} state changed to Finished")
-
-        # Release the request and mark the container as idle
-        yield self.env.process(self.release_request())
-        
-        # Release the bandwidth once service is complete if using topology
-        if use_topology and path:
-            # Get app-specific bandwidth demand for release
-            bandwidth_demand = APPLICATIONS[request.app_id]["bandwidth_demand"]
-            topology.release_path(path, bandwidth_demand)
-
-        # Update the container's state
-        self.state = "Idle"
-        self.idle_since = self.env.now
-        # Put the container into the idle pool
-        self.system.add_idle_container(self, self.cluster_name)
-        # Start the idle timeout process
-        self.idle_timeout_process = self.env.process(self.idle_lifecycle())
+        if self.verbose:
+            print(f"{self.env.now:.2f} - {request} completed service time.")
 
     def idle_lifecycle(self):
         """Manages the idle timeout for a container."""
-        print(f"{self.env.now:.2f} - {self} is now idle. Starting idle timeout.")
+        if self.verbose:
+            print(f"{self.env.now:.2f} - {self} is now idle. Starting idle timeout.")
         try:
             # Use the scheduler to calculate the idle timeout
-            scheduler = self.system.schedulers[self.cluster_name]
+            scheduler = self.system.schedulers[self.cluster.name]
             idle_timeout = scheduler.calculate_idle_timeout(self)
             
-            print(f"{self.env.now:.2f} - Generated exponential idle timeout: {idle_timeout:.2f}s for {self}")
+            if self.verbose:
+                print(f"{self.env.now:.2f} - Generated exponential idle timeout: {idle_timeout:.2f}s for {self}")
             yield self.env.timeout(idle_timeout)
             # If timeout completes without interruption, remove the container
-            print(f"{self.env.now:.2f} - Idle timeout reached for {self}. Removing it.")
+            if self.verbose:
+                print(f"{self.env.now:.2f} - Idle timeout reached for {self}. Removing it.")
             request_stats['containers_removed_idle'] += 1
             app_stats[self.app_id]['containers_removed_idle'] += 1
             
@@ -274,5 +237,6 @@ class Container:
 
         except simpy.Interrupt:
             # Interrupted means it was reused before timeout!
-            print(f"{self.env.now:.2f} - {self} reused before idle timeout. Interrupt received.")
+            if self.verbose:
+                print(f"{self.env.now:.2f} - {self} reused before idle timeout. Interrupt received.")
             # No need to do anything here, the assign_request method handled the state change.
