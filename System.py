@@ -44,44 +44,29 @@ class System:
         """Generates requests for all defined applications."""
         # node_intensity is a percentage (0-100) that determines which level 3 nodes generate requests
         total_request = 0
-        # total_node_request = {}
         for app_id in APPLICATIONS:
-            # Initialize as dictionary for each app
-            node_request = {}
-            total_request_app = 0
             for node_id, node_data in self.topology.graph.nodes(data=True):
-                if node_data['level'] == 3 and  random.random() * 100 < node_intensity:  # Only level 3 nodes can generate requests
+                if node_data['level'] == 3:  # Only level 3 nodes can generate requests
                     # Only generate requests with node_intensity probability
-                    node_rate = math.ceil(node_data['population'] * TRAFFIC_INTENSITY)
-                    # Store as dictionary mapping node_id to node_rate
-                    node_request[node_id] = node_rate
-                    total_request_app += node_rate
-                    # total_rate += node_rate
-            print(f"Total request arrival rate: {total_request_app}/time for app {app_id}")            
-            self.env.process(self.app_request_generator(app_id, total_request_app, node_request))
+                    if random.random() * 100 < node_intensity:
+                        arrival_rate = math.ceil(node_data['population'] * TRAFFIC_INTENSITY)
+                        total_request += arrival_rate
+                        self.env.process(self.app_request_generator(app_id, node_id, arrival_rate))
+        print(f"Total expected request arrival rate: {total_request}.")
 
-
-    def app_request_generator(self, app_id, total_request, node_request):
+    def app_request_generator(self, app_id, node_id, arrival_rate):
         """Generates requests for a specific application according to its Poisson process."""
         app_config = APPLICATIONS[app_id]
         data_location = app_config["data_location"]
-        # Select source node based on weighted probability
-        nodes = list(node_request.keys())
-        weights = [rate/total_request for rate in node_request.values()]
         # No defined period, keep generating until simulation time ends
         while True:
             # Time between arrivals (Exponential distribution for Poisson process)
-            inter_arrival_time = random.expovariate(total_request)
+            inter_arrival_time = random.expovariate(arrival_rate)
             yield self.env.timeout(inter_arrival_time)
 
             # Generate request details
             req_id = next(self.req_id_counter)
             arrival_time = self.env.now
-
-            # Select source node based on weighted probability
-            # nodes = list(node_request.keys())
-            # weights = [rate/total_request for rate in node_request.values()]
-            node_id = random.choices(nodes, weights=weights, k=1)[0]
             
             # Generate resource demands for this app
             resource_demand = generate_app_demands(app_id)
