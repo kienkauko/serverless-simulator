@@ -35,7 +35,7 @@ CLUSTER_CONFIG = {
 
 # Traffic intensity factor to scale arrival rates based on node population
 TRAFFIC_INTENSITY = 0.0001  # Adjust this factor to scale overall traffic
-NODE_INTENSITY = 10  # Percentage of level 3 nodes generating traffic (0-100)
+NODE_INTENSITY = 100  # Percentage of level 3 nodes generating traffic (0-100)
 # Application definitions for heterogeneous workloads
 APPLICATIONS = {
     "app1": {
