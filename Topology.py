@@ -2,19 +2,26 @@ import networkx as nx
 import json
 import math
 from pyproj import Transformer
+from Cluster import Cluster
+from variables import *
 
 class Topology:
-    def __init__(self, edge_path, clusters=None):
-        self.clusters = clusters
+    def __init__(self, env, edge_path, cluster_info):
+        # self.clusters = clusters
         # Store edge cluster for easy access if provided
-        self.edge_cluster = [cluster for cluster_name, cluster in clusters.items() if cluster_name == "edge"] if clusters else []
-        
+        # self.edge_cluster = [cluster for cluster_name, cluster in clusters.items() if cluster_name == "edge"] if clusters else []
+        print("Initializing topology...")
         # Initialize graph
-        self.graph = nx.Graph()
-        
+        self.graph = nx.DiGraph()
+        self.env = env
         # Add a path cache
         self.path_cache = {}  # Format: (src, dst) -> path
         self.path_latency_cache = {}  # Format: (tuple(path)) -> latency
+
+        # Initialize clusters
+        self.clusters = {}
+        self.cloud_clusters = {}
+        self.edge_clusters = {}
 
         # Load edge data from JSON (includes both node and link data)
         with open(edge_path, 'r') as f:
@@ -24,13 +31,13 @@ class Topology:
         for node in edge_data.get('nodes', []):
             node_name = node['name']
             node_id = node_name.replace('_R0', '')  # Remove _R0 suffix
-            
             # Add node to the graph with all attributes
             self.graph.add_node(node_id, 
                                 location=node['location'],
                                 level=node['level'],
                                 population=node['population'],
-                                parent=str(node.get('parent', None)))
+                                parent=str(node.get('parent', None)),
+                                nearby_clusters=None)  # Will be updated later if needed
         
         # Process links from edge.json
         for link in edge_data.get('links', []):
@@ -44,13 +51,15 @@ class Topology:
             # Skip self-loops
             if n1_id == n2_id:
                 continue
-                
+            # if n1_id == "6718" and n2_id == "12817":
+            #     pass
             # Check if both nodes exist in our graph
             if n1_id in self.graph.nodes and n2_id in self.graph.nodes:
                 # Calculate latency based on node locations
                 latency = self.calculate_latency(n1_id, n2_id)
                 
                 # Get bandwidth from JSON or use default
+                # Current bandwidth is: 3: 10, 2: 40, 1: 100, 0: 400 Gbps
                 bandwidth = float(link.get('bandwidth', 1000000000.0))  # Default: 1 Gbps
                 
                 # Get link level
@@ -63,6 +72,58 @@ class Topology:
                                    available_bandwidth=bandwidth, 
                                    latency=latency,
                                    level=combined_level)
+
+        # Load cluster information from JSON
+        with open(cluster_info, 'r') as f:
+            cluster_data = json.load(f)
+        for cluster_name, config in cluster_data.items():
+            # Create the cluster with its servers
+            self.clusters[cluster_name] = Cluster(self.env, cluster_name, config)
+            # Store cloud clusters separately for later usage
+            if cluster_name.startswith("cloud"):
+                self.cloud_clusters[cluster_name] = self.clusters[cluster_name]
+
+        # Initialize nearby clusters for each node
+        if CLUSTER_STRATEGY != "centralized_cloud":
+            print("Calculating nearby clusters for each node based on strategy: ", CLUSTER_STRATEGY)
+            if CLUSTER_STRATEGY == "massive_edge_cloud":
+                self.edge_clusters = self.defined_edge_DCs(EDGE_DC_LEVEL)
+                self.clusters.update(self.edge_clusters)
+            for node_id in [n for n, data in self.graph.nodes(data=True) if data.get('level') == 3]:
+                nearby_clusters = self.get_nearby(CLUSTER_STRATEGY, node_id, EDGE_DC_LEVEL)
+                self.graph.nodes[node_id]['nearby_clusters'] = nearby_clusters
+
+        print("Topology initialized.")
+        
+    def get_link_utilization(self):
+        """Calculate and return average link utilization statistics grouped by level."""
+        utilization_stats = {}
+        level_edges = {}
+        
+        # Collect utilization data for each edge grouped by level
+        for n1, n2, data in self.graph.edges(data=True):
+            bandwidth = data.get('bandwidth', 0)
+            available_bw = data.get('available_bandwidth', 0)
+            level = data.get('level', 'unknown')
+            
+            # Calculate utilization as percentage
+            utilization = ((bandwidth - available_bw) / bandwidth) * 100 
+            
+            if level not in level_edges:
+                level_edges[level] = {
+                    'count': 0,
+                    'total_utilization': 0
+                }
+            
+            level_edges[level]['count'] += 1
+            level_edges[level]['total_utilization'] += utilization
+        
+        # Calculate average utilization for each level
+        for level, stats in level_edges.items():
+            if stats['count'] > 0:
+                utilization_stats[level] = stats['total_utilization'] / stats['count']
+        
+        return utilization_stats
     
     def calculate_latency(self, node1, node2):
         """Calculate latency between two nodes based on their locations in the JSON file."""
@@ -118,7 +179,7 @@ class Topology:
         # else:
 
     
-    def find_shortest_path(self, src, dst, required_bw=None):
+    def find_possible_path(self, src, dst, required_bw=None):
         """Find shortest path between two nodes considering bandwidth if specified."""
         # try:
         # if required_bw is None:
@@ -129,13 +190,21 @@ class Topology:
         # Find paths ordered by latency
         # paths = list(nx.shortest_simple_paths(self.graph, src, dst, weight='latency'))
         path = self.get_cached_path(src, dst)
+        if not path:
+            path = self.find_hierachical_path(src, dst)
+            
         # Track failed links by level
         failed_links_by_level = {}
         
         # Check bandwidth constraints if path exists
         if path:
+            self.save_cached_path(src, dst, path)
             for i in range(len(path)-1):
                 edge = self.graph.get_edge_data(path[i], path[i+1])
+                # level = edge.get('level', 'unknown')
+                # if level == '2-3':
+                #     print("source node: ", path[i], " dst node: ", path[i+1])
+                #     pass
                 if edge['available_bandwidth'] < required_bw:
                     # Record the level of the failed link
                     level = edge.get('level', 'unknown')
@@ -174,16 +243,26 @@ class Topology:
 
             path = [node_a]
             
-            while self.graph.nodes[node_a_parent]['level'] > lower_level:
-                path += nx.shortest_path(self.graph, node_a, node_a_parent, weight=None)[1:]
-                node_a = node_a_parent
-                node_a_parent = self.graph.nodes[node_a].get('parent', None)
-
+            while self.graph.nodes[node_a]['level'] > lower_level:
                 if self.graph.nodes[node_a]['level'] == 1:
                     path += [node_a_parent]
                     if node_a_parent != node_b:
                         path += [node_b]
                     return path
+                cached_path = self.get_cached_path(node_a, node_a_parent)
+                if cached_path:
+                    path += cached_path[1:]  # Avoid duplicating node_a
+                else:
+                    try:
+                        cached_path = nx.shortest_path(self.graph, node_a, node_a_parent, weight=None)
+                        path += cached_path[1:]
+                        self.save_cached_path(node_a, node_a_parent, cached_path)
+                    except nx.NetworkXNoPath:
+                        return None
+                node_a = node_a_parent
+                node_a_parent = self.graph.nodes[node_a].get('parent', None)
+            return path
+                
         # Case routing from same and 0 level
         elif src_level == dst_level and src_level == 0:
             if src == dst:
@@ -281,7 +360,7 @@ class Topology:
         self.release_path(paths[0], request.bandwidth_direct)
         self.release_path(paths[1], request.bandwidth_indirect)
     
-    def find_cluster(self, request, strategy='always_cloud'):
+    def find_cluster(self, request):
         """Find appropriate clusters for request processing
            Returns: ( dict(cluster -> [path_direct, path_indirect]),
                      dict(cluster -> combined_failed_links) )
@@ -291,23 +370,23 @@ class Topology:
         found_direct = False
         found_indirect = False
 
-        if strategy == 'always_cloud':
+        if CLUSTER_STRATEGY == 'centralized_cloud':
             # direct to cloud
-            found_direct, path_direct, failed_links_map = self.find_shortest_path(
+            found_direct, path_direct, failed_links_map = self.find_possible_path(
                 request.origin_node,
-                self.clusters['cloud'].node,
+                self.clusters[CENTRAL_CLOUD].node,
                 request.bandwidth_direct
             )
             # from cloud to data
             if found_direct:
-                found_indirect, path_indirect, failed_links_map = self.find_shortest_path(
-                    self.clusters['cloud'].node,
+                found_indirect, path_indirect, failed_links_map = self.find_possible_path(
+                    self.clusters[CENTRAL_CLOUD].node,
                     request.data_node,
                     request.bandwidth_indirect
                 )
             # if both paths found, return them
             if found_direct and found_indirect:
-                list_paths[self.clusters['cloud']] = [path_direct, path_indirect]
+                list_paths[self.clusters[CENTRAL_CLOUD]] = [path_direct, path_indirect]
                 # failed_links_map[self.clusters['cloud']] = combined
                 return True, list_paths, {}
             else:
@@ -318,42 +397,33 @@ class Topology:
                 #         combined[lvl] = combined.get(lvl, 0) + cnt
                 return False, {}, failed_links_map
                     
-        elif strategy == 'local_edge_then_cloud':
-            # first try nearest edge
-            if not request.local_edge_cluster:
-                edge_cluster, dest_node = self.find_nearest_edge_cluster(request.origin_node)
-            else:
-                dest_node = request.local_edge_cluster
-                edge_cluster = next((e for e in self.edge_cluster if e.node == dest_node), None)
-
-            if edge_cluster:
-                pd, fd = self.find_path(request.origin_node, dest_node, request.bandwidth_direct)
-                pi, fi = self.find_path(dest_node, request.data_node, request.bandwidth_indirect)
-                combined_edge = {}
-                for fl in (fd or {}), (fi or {}):
-                    for lvl, cnt in fl.items():
-                        combined_edge[lvl] = combined_edge.get(lvl, 0) + cnt
-
-                if pd and pi:
-                    list_paths[edge_cluster] = [pd, pi]
-                    failed_links_map[edge_cluster] = combined_edge
-
-            # always add cloud fallback
-            pd2, fd2 = self.find_path(request.origin_node, self.clusters['cloud'].node, request.bandwidth_direct)
-            pi2, fi2 = self.find_path(self.clusters['cloud'].node, request.data_node, request.bandwidth_indirect)
-            combined_cloud = {}
-            for fl in (fd2 or {}), (fi2 or {}):
-                for lvl, cnt in fl.items():
-                    combined_cloud[lvl] = combined_cloud.get(lvl, 0) + cnt
-
-            if pd2 and pi2:
-                list_paths[self.clusters['cloud']] = [pd2, pi2]
-                failed_links_map[self.clusters['cloud']] = combined_cloud
-
-            return list_paths, failed_links_map
-
+        # elif CLUSTER_STRATEGY == 'distributed_cloud':
         else:
-            raise ValueError(f"Unknown topology strategy: {strategy}")
+            nearby_clusters = self.graph.nodes[request.origin_node]['nearby_clusters']
+            for cluster in nearby_clusters:
+                # direct to cloud
+                found_direct, path_direct, failed_links_map = self.find_possible_path(
+                    request.origin_node,
+                    cluster.node,
+                    request.bandwidth_direct
+                )
+                # from cloud to data
+                if found_direct:
+                    found_indirect, path_indirect, failed_links_map = self.find_possible_path(
+                        cluster.node,
+                        request.data_node,
+                        request.bandwidth_indirect
+                    )
+                # if both paths found, return them
+                if found_direct and found_indirect:
+                    list_paths[cluster] = [path_direct, path_indirect]
+            # If no cluster could satisfy the request
+            if not list_paths:
+                return False, {}, failed_links_map
+            else:
+                return True, list_paths, failed_links_map
+        # else:
+        #     raise ValueError(f"Unknown topology strategy: {CLUSTER_STRATEGY}")
     
     def find_nearest_edge_cluster(self, src):
         """Find nearest edge cluster in terms of latency"""
@@ -384,15 +454,20 @@ class Topology:
         # Check if path is in cache
         if cache_key in self.path_cache:
             return self.path_cache[cache_key]
-        
+        else:
+            return None
         # Path not in cache, compute it
-        path = self.find_hierachical_path(src, dst)
-        # Store in cache
-        self.path_cache[cache_key] = path
+        # path = self.find_hierachical_path(src, dst)
+        # # Store in cache
+        # self.path_cache[cache_key] = path
 
-        return path
-    
+        # return path
+    def save_cached_path(self, src, dst, path):
+        """Save a computed path to the cache"""
+        cache_key = (src, dst)
+        self.path_cache[cache_key] = path
     # Add a similar cache for path latency
+
     def get_path_latency(self, path):
         """Calculate the total latency of a path with caching"""
         if not path or len(path) < 2:
@@ -411,3 +486,82 @@ class Topology:
         # Cache the result
         self.path_latency_cache[path_key] = total_latency
         return total_latency
+    
+    def get_nearby(self, type, node, level=None):
+        """Find and return a list of clusters sorted by proximity to the given node"""
+        # Create a list to store clusters and their latencies
+        sorted_clusters = []
+        if type == 'distributed_cloud':
+            clusters_with_latencies = []
+            # Check proximity to all cloud clusters
+            for cluster_name, cluster in self.cloud_clusters.items():                
+                path = self.get_cached_path(node, cluster.node)
+                if not path:
+                    path = self.find_hierachical_path(node, cluster.node)
+                if path:
+                    self.save_cached_path(node, cluster.node, path)
+                    total_latency = self.get_path_latency(path)
+                    clusters_with_latencies.append((cluster, total_latency))
+            
+            # Sort clusters by latency (proximity)
+            sorted_clusters = [c for c, _ in sorted(clusters_with_latencies, key=lambda x: x[1])]
+            return sorted_clusters
+        elif type == 'massive_edge_cloud':
+            if level == 1:
+                parent = self.graph.nodes[self.graph.nodes[node]['parent']]['parent']
+            elif level == 2:
+                parent = self.graph.nodes[node]['parent']
+            else:
+                raise ValueError(f"Edge cloud proximity search only supports level 1 or 2")
+                # path = self.get_cached_path(node, grandparent)
+                # Find the edge cluster that corresponds to the grandparent node
+                # edge_cluster = None
+                # cloud_cluster = None
+            for cluster_name, cluster in self.edge_clusters.items():
+                if cluster.node == parent:
+                    sorted_clusters.append(cluster) 
+                    break
+            for cluster_name, cluster in self.cloud_clusters.items():
+                if cluster_name == CENTRAL_CLOUD:
+                    sorted_clusters.append(cluster) 
+                    break  
+            return sorted_clusters                             
+        else:
+            raise ValueError(f"Unknown cluster type for proximity search: {type}")
+    
+    def defined_edge_DCs(self, level):
+        # Find all nodes with level=1
+        level_nodes = [node for node, data in self.graph.nodes(data=True) if data.get('level') == level]
+        num_level_nodes = len(level_nodes)
+        
+        if num_level_nodes == 0:
+            print("Warning: No level 1 nodes found in the topology.")
+            return {}
+        
+        # Calculate servers per cluster (distribute evenly)
+        servers_per_cluster = EDGE_SERVER_NUMBER // num_level_nodes
+        remaining_servers = EDGE_SERVER_NUMBER % num_level_nodes
+        
+        edge_clusters = {}
+        
+        for i, node_name in enumerate(level_nodes):
+            # Add extra server for some clusters if there are remaining servers
+            num_servers = servers_per_cluster + (1 if i < remaining_servers else 0)
+            
+            cluster_name = f"edge-{node_name}"
+            
+            # Create cluster configuration
+            config = {
+                "node": node_name,
+                "num_servers": num_servers,
+                "server_cpu": 100.0,
+                "server_ram": 100.0,
+                "power_max": 60,
+                "power_min": 10,
+                "spawn_time_factor": 1.0
+            }
+
+            edge_clusters[cluster_name] = Cluster(self.env, cluster_name, config)
+
+        print(f"Defined {len(edge_clusters)} edge clusters at node level {level}.")
+        return edge_clusters

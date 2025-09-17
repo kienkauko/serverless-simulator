@@ -11,34 +11,35 @@ from LoadBalancer import LoadBalancer  # Import our new LoadBalancer
 
 class System:
     """Orchestrates the simulation, managing servers, requests, and containers."""
-    def __init__(self, env, topology, clusters, scheduler_class=FirstFitScheduler, verbose=False):
+    def __init__(self, env, topology, scheduler_class=FirstFitScheduler):
         self.env = env
         self.topology = topology  # New: topology instance
-        self.clusters = clusters  # Dictionary of {cluster_name: cluster_instance}
+        self.clusters = topology.clusters  # Dictionary of {cluster_name: cluster_instance}
         self.req_id_counter = itertools.count()
-        self.verbose = verbose  # Flag to control logging output
+        # self.verbose = verbose  # Flag to control logging output
         
         # generate idle timeout for applications
         # NOTE: later custom timeout per application per cluster can be implemented
         self.idle_timeout_cluster = {}
         for app_id in APPLICATIONS:
             self.idle_timeout_cluster[app_id] = 2
-        # Initialize schedulers for each cluster
+        # Initialize schedulers and idle container pools for each cluster
         self.schedulers = {}
-        for cluster_name, cluster in clusters.items():
-            self.schedulers[cluster_name] = scheduler_class(env, cluster, self.idle_timeout_cluster, verbose=self.verbose)
-        
-        # Initialize the LoadBalancer (now handling multiple clusters)
-        self.load_balancer = LoadBalancer(env, self, self.schedulers, verbose=self.verbose)
-        
-        # For applications containers (now per cluster)
         self.app_idle_containers = {}
-        
-        # Create separate idle container pools for each application and cluster
-        for cluster_name in clusters:
+
+        for cluster_name, cluster in self.clusters.items():
+            self.schedulers[cluster_name] = scheduler_class(env, cluster, self.idle_timeout_cluster)
             self.app_idle_containers[cluster_name] = {}
             for app_id in APPLICATIONS:
                 self.app_idle_containers[cluster_name][app_id] = []
+        # Initialize the LoadBalancer (now handling multiple clusters)
+        self.load_balancer = LoadBalancer(env, self, self.schedulers)
+        
+        # For applications containers (now per cluster)
+        
+        # Create separate idle container pools for each application and cluster
+        # for cluster_name in self.clusters:
+           
 
     def request_generator(self, node_intensity):
         """Generates requests for all defined applications."""
@@ -77,7 +78,7 @@ class System:
             # Update statistics
             self.update_start_statistics(request)
 
-            if self.verbose:
+            if VERBOSE:
                 print(f"{self.env.now:.2f} - Request Generated: {request}")
 
             # Start the handling process for this request
@@ -92,7 +93,8 @@ class System:
         # paths = {}
         # target_clusters = []
         # Find cluster (DC or Edge DC) where request can be processed
-        link_found, target_clusters, failed_links_map = self.topology.find_cluster(request, strategy='always_cloud')
+        # Finding strategy is in variables.py -> CLUSTER_STRATEGY
+        link_found, target_clusters, failed_links_map = self.topology.find_cluster(request)
 
         if not link_found:
             self.update_end_statistics(request, 'link_failed', failed_links_map)
@@ -114,7 +116,7 @@ class System:
             container.release_request() # this process also puts container to idle cycle
             self.topology.remove_paths(request, target_clusters[cluster])
             # Put the container into the idle pool
-            self.app_idle_containers[cluster_name][container.app_id].append(container)
+            self.app_idle_containers[cluster.name][container.app_id].append(container)
 
         else:
             # print(f"{self.env.now:.2f} - Failed to assign request {request} to a container.")
@@ -122,7 +124,7 @@ class System:
 
     # def add_idle_container(self, container, cluster_name):
     #     """Adds a container to the idle store for a specific cluster."""
-    #     if self.verbose:
+    #     if VERBOSE:
     #         print(f"{self.env.now:.2f} - Adding {container} to idle pool in {cluster_name} cluster.")
     #     # Put container in the appropriate cluster's app idle pool
     #     self.app_idle_containers[cluster_name][container.app_id].append(container)
@@ -152,6 +154,9 @@ class System:
             request_stats['processed'] += 1
             app_stats[request.app_id]['processed'] += 1
             
+            # Record request location
+            if request.assigned_cluster.startswith("cloud"):
+                request_stats['offloaded_to_cloud'] += 1
             # Compute latencies: sum of propagation, spawn, and processing times
             total_latency = request.prop_delay + request.spawn_time + request.processing_time
             

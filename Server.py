@@ -1,24 +1,29 @@
 import simpy
 import random
-from variables import APPLICATIONS, CLUSTER_CONFIG
+from variables import APPLICATIONS, VERBOSE, CLUSTER_STRATEGY   
 from Container import Container
 
 class Server:
     """Represents a physical server with resource capacities."""
-    def __init__(self, env, cluster, server_id, config, verbose=False):
+    def __init__(self, env, cluster, server_id, config):
         self.env = env
         self.id = server_id
         self.cluster = cluster
-        self.verbose = verbose  # Get verbose flag from cluster
+        # self.verbose = verbose  # Get verbose flag from cluster
         # Normal variables to represent available resources
-        self.cpu_capacity = config['server_cpu']  # Store the maximum capacity
-        self.ram_capacity = config['server_ram']  # Store the maximum capacity
+        if CLUSTER_STRATEGY == "centralized_cloud":
+            self.cpu_capacity = 1000000000  # Very large CPU capacity
+            self.ram_capacity = 1000000000
+            
+        else:
+            self.cpu_capacity = config['server_cpu']  # Store the maximum capacity
+            self.ram_capacity = config['server_ram']  # Store the maximum capacity
+        self.power_max = config['power_max']  # Max power consumption
+        self.power_min = config['power_min']  # Min power consumption
         self.cpu_reserve = self.cpu_capacity
         self.ram_reserve = self.ram_capacity
         self.cpu_real = self.cpu_capacity
         self.ram_real = self.ram_capacity
-        self.power_max = config['power_max']  # Max power consumption
-        self.power_min = config['power_min']  # Min power consumption
         self.spawn_time_factor = config['spawn_time_factor']  # Spawn time multiplier
         self.containers = [] # Keep track of containers running on this server
         # Add a lock to prevent race conditions during resource allocation
@@ -48,7 +53,7 @@ class Server:
     def spawn_container_process(self, system, request, cluster_name):
 
         """Simulates the time and resource acquisition for spawning a container."""
-        if self.verbose:
+        if VERBOSE:
             print(f"{self.env.now:.2f} - Attempting to acquire resources on {self} for {request}...")
 
         try:
@@ -64,7 +69,7 @@ class Server:
                 self.env.exit(None)  # Signal spawn failure
 
             # Log levels before acquiring resources
-            if self.verbose:
+            if VERBOSE:
                 print(f"{self.env.now:.2f} - Server before spawn: {self}")
                 print(f"{self.env.now:.2f} - Demanding resources: CPU_Real {request.cpu_warm:.1f}, RAM_Real {request.ram_warm:.1f}, CPU_Reserve {request.cpu_demand:.1f}, RAM_Reserve {request.ram_demand:.1f}")
 
@@ -75,7 +80,7 @@ class Server:
             self.ram_reserve -= request.ram_demand
 
             # Log levels after acquiring resources
-            if self.verbose:
+            if VERBOSE:
                 print(f"{self.env.now:.2f} - Server after spawn: {self}")
             
             # Release the lock after allocation
@@ -89,19 +94,19 @@ class Server:
             
             # Resources acquired, now wait for spawn time, which is exponential distributed
             spawn_time_real = random.expovariate(1.0/spawn_time_mean)
-            if self.verbose:
+            if VERBOSE:
                 print(f"{self.env.now:.2f} - Spawning container on {cluster_name} cluster with factor {self.spawn_time_factor}. Base time: {base_spawn_time:.2f}, Adjusted mean: {spawn_time_mean:.2f}")
                 print(f"{self.env.now:.2f} - Waiting {spawn_time_real:.2f} time units for container to spawn...")
             yield self.env.timeout(spawn_time_real)
 
             # Record the spawn time for latency calculation
             request.spawn_time = spawn_time_real
-
+            request.assigned_cluster = cluster_name
             # Spawning complete, create the container object with app_id and cluster
             container = Container(self.env, system, self.cluster, self, request)
             # container.state = "Running"  # Explicitly mark as reserved
             self.containers.append(container) # Track container on server
-            if self.verbose:
+            if VERBOSE:
                 print(f"{self.env.now:.2f} - Spawn Complete: Created {container}")
             
             # Add the newly spawned container to the idle pool immediately

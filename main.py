@@ -1,11 +1,11 @@
 import simpy
 import random
+import time
+
 from System import System
 from variables import *
 from Topology import Topology
-from Cluster import Cluster
-import time
-from Scheduler import FirstFitScheduler, BestFitScheduler  # Import our schedulers
+from Scheduler import FirstFitScheduler  # Import our schedulers
 
 # --- Progress Tracking ---
 def track_progress(env, total_time):
@@ -45,41 +45,42 @@ def track_progress(env, total_time):
 # --- Simulation Setup and Run ---
 
 print("--- Simulation Start ---")
-print(f"Use Topology: {USE_TOPOLOGY}")
-print(f"SimTime={SIM_TIME}, Seed={RANDOM_SEED}")
+# print(f"Use Topology: {USE_TOPOLOGY}")
+print(f"Simulation time is: {SIM_TIME} time units.")
 
-print("\n--- Cluster Configurations ---")
-for cluster_name, config in CLUSTER_CONFIG.items():
-    print(f"Cluster: {cluster_name}")
-    print(f"  Topology Node: {config['node']}")
-    print(f"  Number of Servers: {config['num_servers']}")
-    print(f"  Server CPU: {config['server_cpu']}%")
-    print(f"  Server RAM: {config['server_ram']}%")
-    print(f"  Spawn Time Factor: {config['spawn_time_factor']}")
+# print("\n--- Cluster Configurations ---")
+# for cluster_name, config in CLUSTER_CONFIG.items():
+#     print(f"Cluster: {cluster_name}")
+#     print(f"  Topology Node: {config['node']}")
+#     print(f"  Number of Servers: {config['num_servers']}")
+#     print(f"  Server CPU: {config['server_cpu']}%")
+#     print(f"  Server RAM: {config['server_ram']}%")
+#     print(f"  Spawn Time Factor: {config['spawn_time_factor']}")
 
-print("-" * 20)
+# print("-" * 20)
 
 random.seed(RANDOM_SEED)
 env = simpy.Environment()
 
 # Create clusters
-clusters = {}
-for cluster_name, config in CLUSTER_CONFIG.items():
+# clusters = {}
+# for cluster_name, config in CLUSTER_CONFIG.items():
     # Use the specified node for this cluster
-    node = config["node"]
+    # node = config["node"]
     # Create the cluster with its servers
-    clusters[cluster_name] = Cluster(env, cluster_name, config, verbose=VERBOSE)
+    # clusters[cluster_name] = Cluster(env, cluster_name, config, verbose=VERBOSE)
 
 # Create topology from a file (only used if USE_TOPOLOGY is True)
 topology_file = "./topology/edge.json"
-topology = Topology(topology_file, clusters)
+cluster_file = "./topology/cluster.json"
+topology = Topology(env, topology_file, cluster_file)
 
 # Select scheduler type - can be changed to BestFitScheduler for a different strategy
 scheduler_class = FirstFitScheduler
 # scheduler_class = BestFitScheduler  # Uncomment to use BestFitScheduler instead
 
 # Create System with topology, clusters, and scheduler
-system = System(env, topology, clusters, scheduler_class=scheduler_class, verbose=VERBOSE)
+system = System(env, topology, scheduler_class=scheduler_class)
 
 # Call the request generator directly without wrapping in env.process()
 system.request_generator(NODE_INTENSITY)
@@ -97,7 +98,7 @@ for key, value in request_stats.items():
 
 total_blocked = request_stats['blocked_no_server_capacity'] + request_stats['blocked_spawn_failed'] \
                 + request_stats['blocked_no_path']
-    
+
 # total_ended = request_stats['processed'] + total_blocked
 # print(f"{'Total requests generated':<30}: {total_ended}")
 print(f"{'Total requests counted':<30}: {latency_stats['count']}")
@@ -108,6 +109,9 @@ if request_stats['generated'] > 0:
         print(f"  {' - Due to computing':<28}: {request_stats['blocked_no_server_capacity'] / request_stats['generated'] * 100}")
         print(f"  {' - Due to link':<28}: {request_stats['blocked_no_path'] / request_stats['generated'] * 100}")
 
+avg_offloaded = request_stats['offloaded_to_cloud']/request_stats['processed']*100
+print(f"{'Average Offloaded to Cloud':<30}: {avg_offloaded:.2f}")
+request_stats['offloaded_to_cloud']
 # if request_stats['container_spawns_initiated'] > 0:
 #     spawn_fail_perc = request_stats['container_spawns_failed'] / request_stats['container_spawns_initiated'] * 100
 #     print(f"{'Spawn failure percentage':<30}: {spawn_fail_perc:.2f}%")
@@ -127,54 +131,77 @@ if latency_stats['count'] > 0:
     print(f"{'Average Waiting Time':<30}: {avg_wait:.2f}")
 
 # Print application-specific statistics
-print("\n--- Application-Specific Statistics ---")
-for app_id, stats in app_stats.items():
-    print(f"\nApplication: {app_id}")
-    for key, value in stats.items():
-        print(f"  {key.replace('_', ' ').capitalize()}: {value}")
+# print("\n--- Application-Specific Statistics ---")
+# for app_id, stats in app_stats.items():
+#     print(f"\nApplication: {app_id}")
+#     for key, value in stats.items():
+#         print(f"  {key.replace('_', ' ').capitalize()}: {value}")
     
-    # Calculate app-specific blocking percentage
-    app_total_blocked = stats['blocked_no_server_capacity'] + stats['blocked_spawn_failed'] \
-                        +  stats['blocked_no_path']
+#     # Calculate app-specific blocking percentage
+#     app_total_blocked = stats['blocked_no_server_capacity'] + stats['blocked_spawn_failed'] \
+#                         +  stats['blocked_no_path']
         
-    if stats['generated'] > 0:
-        app_block_perc = app_total_blocked / stats['generated'] * 100
-        print(f"  {'Blocking percentage':<28}: {app_block_perc:.2f}%")
+#     if stats['generated'] > 0:
+#         app_block_perc = app_total_blocked / stats['generated'] * 100
+#         print(f"  {'Blocking percentage':<28}: {app_block_perc:.2f}%")
 
-    # Print app-specific latency metrics
-    if app_latency_stats[app_id]['count'] > 0:
-        app_avg_total = app_latency_stats[app_id]['total_latency'] / app_latency_stats[app_id]['count']
-        app_avg_prop = app_latency_stats[app_id]['propagation_delay'] / app_latency_stats[app_id]['count']
-        app_avg_spawn = app_latency_stats[app_id]['spawning_time'] / app_latency_stats[app_id]['count']
-        app_avg_proc = app_latency_stats[app_id]['processing_time'] / app_latency_stats[app_id]['count']
-        app_avg_wait = app_latency_stats[app_id]['waiting_time'] / app_latency_stats[app_id]['count']
-        print(f"  {'Average Total Latency':<28}: {app_avg_total:.2f}")
-        print(f"  {'Average Propagation Delay':<28}: {app_avg_prop:.2f}")
-        print(f"  {'Average Spawn Time':<28}: {app_avg_spawn:.2f}")
-        print(f"  {'Average Processing Time':<28}: {app_avg_proc:.2f}")
-        print(f"  {'Average Waiting Time':<28}: {app_avg_wait:.2f}")
+#     # Print app-specific latency metrics
+#     if app_latency_stats[app_id]['count'] > 0:
+#         app_avg_total = app_latency_stats[app_id]['total_latency'] / app_latency_stats[app_id]['count']
+#         app_avg_prop = app_latency_stats[app_id]['propagation_delay'] / app_latency_stats[app_id]['count']
+#         app_avg_spawn = app_latency_stats[app_id]['spawning_time'] / app_latency_stats[app_id]['count']
+#         app_avg_proc = app_latency_stats[app_id]['processing_time'] / app_latency_stats[app_id]['count']
+#         app_avg_wait = app_latency_stats[app_id]['waiting_time'] / app_latency_stats[app_id]['count']
+#         print(f"  {'Average Total Latency':<28}: {app_avg_total:.2f}")
+#         print(f"  {'Average Propagation Delay':<28}: {app_avg_prop:.2f}")
+#         print(f"  {'Average Spawn Time':<28}: {app_avg_spawn:.2f}")
+#         print(f"  {'Average Processing Time':<28}: {app_avg_proc:.2f}")
+#         print(f"  {'Average Waiting Time':<28}: {app_avg_wait:.2f}")
 
 # Print cluster-specific statistics
 print("\n--- Cluster Statistics ---")
-for cluster_name, cluster in clusters.items():
-    print(f"\nCluster: {cluster_name} at node {cluster.node}")
+# change here to print which clusters
+# Calculate averages across all clusters
+total_clusters = len(topology.edge_clusters)
+if total_clusters > 0:
+    total_cpu_usage = 0
+    total_ram_usage = 0
+    total_cpu_reserve = 0
+    total_ram_reserve = 0
+    total_power_cluster = 0
+    total_power_server = 0
     
-    # Average CPU and RAM utilization
-    avg_cpu_real = cluster.get_mean_cpu('cluster', 'usage')
-    avg_ram_real = cluster.get_mean_ram('cluster', 'usage')
-    avg_cpu_reserve = cluster.get_mean_cpu('cluster', 'reserve')
-    avg_ram_reserve = cluster.get_mean_ram('cluster', 'reserve')
-    avg_power_cluster = cluster.get_mean_power('cluster')
-    avg_power_server = cluster.get_mean_power('server')
-
-    print(f"  {'Avg CPU Usage (%)':<28}: {avg_cpu_real:.2f}%")
-    print(f"  {'Avg RAM Usage (%)':<28}: {avg_ram_real:.2f}%")
+    for cluster_name, cluster in topology.edge_clusters.items():
+        total_cpu_usage += cluster.get_mean_cpu('cluster', 'usage')
+        total_ram_usage += cluster.get_mean_ram('cluster', 'usage')
+        total_cpu_reserve += cluster.get_mean_cpu('cluster', 'reserve')
+        total_ram_reserve += cluster.get_mean_ram('cluster', 'reserve')
+        total_power_cluster += cluster.get_mean_power('cluster')
+        total_power_server += cluster.get_mean_power('server')
+    
+    # Calculate averages
+    avg_cpu_usage = total_cpu_usage / total_clusters
+    avg_ram_usage = total_ram_usage / total_clusters
+    avg_cpu_reserve = total_cpu_reserve / total_clusters
+    avg_ram_reserve = total_ram_reserve / total_clusters
+    avg_power_cluster = total_power_cluster / total_clusters
+    avg_power_server = total_power_server / total_clusters
+    
+    print(f"--- Average Metrics Across All Clusters ({total_clusters} clusters) ---")
+    print(f"  {'Avg CPU Usage (%)':<28}: {avg_cpu_usage:.2f}%")
+    print(f"  {'Avg RAM Usage (%)':<28}: {avg_ram_usage:.2f}%")
     print(f"  {'Avg CPU Reserve (%)':<28}: {avg_cpu_reserve:.2f}%")
     print(f"  {'Avg RAM Reserve (%)':<28}: {avg_ram_reserve:.2f}%")
     print(f"  {'Avg Power Usage (Cluster)':<28}: {avg_power_cluster:.2f} Watts")
     print(f"  {'Avg Power Usage (Per Server)':<28}: {avg_power_server:.2f} Watts")
-    # Count active containers in this cluster
-    # active_containers = sum(len(server.containers) for server in cluster.servers)
-    # print(f"  {'Active Containers':<28}: {active_containers}")
+else:
+    print("No edge clusters available to calculate averages")
 
-# Add progress tracking process
+print("\n--- Topology Link Utilizations ---")
+print("Warning: These are instantaneous values at the end of the simulation, not time-averaged.")
+# Print link utilization data in a more readable format
+link_utilization = topology.get_link_utilization()
+print("Link Utilizations (%):")
+for link, value in link_utilization.items():
+    percentage = value * 100  # Convert to percentage
+    print(f"  Link {link:<6}: {percentage:.2f}%")

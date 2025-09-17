@@ -1,7 +1,7 @@
 # Detailed Simulation Report
 
 - **Report Generated:** 10:43AM on 16/04/2025
-- **Updated:** 09/09/2025
+- **Updated:** 17/09/2025
 
 ## Simulator Functions & Mechanisms
 
@@ -26,6 +26,7 @@
     - **Scheduler:** Responsible for spawning new containers when needed.
       - Implements two strategies: FirstFit and BestFit for container placement.
       - Currently operates within a single cluster scope.
+  - System → Load Balancer → Scheduler flow has been refined for better performance.
 
 - **Container Assignment Mechanism:**
   - On request arrival, the request is directed to the Load Balancer:
@@ -90,6 +91,11 @@
   - Paths are routed via hierarchical path finding algorithm
   - Node levels are incorporated into the topology structure
   - Population data at level 3 nodes determines request generation distribution
+
+- **Cluster Placement Strategies:**
+  - Distributed cloud: Places compute clusters across multiple locations
+  - Centralized cloud: Concentrates compute resources in central locations with infinite resources
+  - Massive edge cloud: Deploys numerous smaller compute clusters at edge locations
 
 ## Runtime Optimization
 

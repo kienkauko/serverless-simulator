@@ -9,29 +9,34 @@ CONTAINER_ASSIGN_RATE = 1000000.0 # Average rate for request assignment (very fa
 
 # Topology configuration
 USE_TOPOLOGY = True  # Enable topology routing
-
+CLUSTER_STRATEGY = "centralized_cloud"  # Options: "massive_edge_cloud", "centralized_cloud", "distributed_cloud"
+CENTRAL_CLOUD = "cloud-01"  # Central cloud node ID in the topology
+CENTRAL_CLOUD_NODE = "12876"  # Central cloud node ID in the topology
+EDGE_SERVER_NUMBER = 4000  # CPU capacity for all MECs
+EDGE_DC_LEVEL = 1
+# EDGE_RESOURCE_RAM = 100000.0   # RAM capacity for all MECs
 # --- Multi-Cluster Configuration ---
 # Define the parameters for each cluster
-CLUSTER_CONFIG = {
-    "edge": {
-        "node": "nodeA",
-        "num_servers": 2,
-        "server_cpu": 100.0,
-        "server_ram": 100.0,
-        "power_max": 25,
-        "power_min": 5,
-        "spawn_time_factor": 1.0  # Edge spawn time multiplier (slower)
-    },
-    "cloud": {
-        "node": "12876",
-        "num_servers": 200,
-        "server_cpu": 200.0,
-        "server_ram": 200.0,
-        "power_max": 150,
-        "power_min": 50,
-        "spawn_time_factor": 0.5  # Cloud spawn time multiplier (faster)
-    }
-}
+# CLUSTER_CONFIG = {
+#     "edge": {
+#         "node": "nodeA",
+#         "num_servers": 2,
+#         "server_cpu": 100.0,
+#         "server_ram": 100.0,
+#         "power_max": 25,
+#         "power_min": 5,
+#         "spawn_time_factor": 1.0  # Edge spawn time multiplier (slower)
+#     },
+#     "cloud": {
+#         "node": "12876",
+#         "num_servers": 200,
+#         "server_cpu": 200.0,
+#         "server_ram": 200.0,
+#         "power_max": 150,
+#         "power_min": 50,
+#         "spawn_time_factor": 0.5  # Cloud spawn time multiplier (faster)
+#     }
+# }
 
 # Traffic intensity factor to scale arrival rates based on node population
 TRAFFIC_INTENSITY = 0.0001  # Adjust this factor to scale overall traffic
@@ -50,8 +55,8 @@ APPLICATIONS = {
         "max_req_cpu": 50.0,  # Maximum CPU demand for request
         "min_req_ram": 20.0,  # Minimum RAM demand for request
         "max_req_ram": 20.0,  # Maximum RAM demand for request
-        "bandwidth_direct": 5.0,  # Bandwidth demand for this application
-        "bandwidth_indirect": 1.0,  # Bandwidth demand for this application
+        "bandwidth_direct": 40000000,  # Bandwidth demand for this application: bit per second
+        "bandwidth_indirect": 1000000,  # Bandwidth demand for this application: bit per second
         "data_location": "12876",  # Location of data for this application - Cloud node
     },
     # "app2": {
@@ -95,6 +100,7 @@ request_stats = {
     'blocked_no_server_capacity': 0, # Blocked because no server could *ever* fit it
     'blocked_spawn_failed': 0,      # Blocked because spawning failed (transient lack of resources)
     'blocked_no_path': 0,  # New: rejected due to no routing path with available bandwidth
+    'offloaded_to_cloud': 0,  # New: offloaded to cloud due to lack of edge resources
     'container_spawns_initiated': 0,
     'container_spawns_failed': 0,
     'container_spawns_succeeded': 0,
@@ -135,14 +141,14 @@ for app_id in APPLICATIONS:
     }
 
 # Cluster-specific statistics
-cluster_stats = {}
-for cluster_name in CLUSTER_CONFIG:
-    cluster_stats[cluster_name] = {
-        'cpu_real': [],
-        'ram_real': [],
-        'cpu_reserve': [],
-        'ram_reserve': [],
-    }
+# cluster_stats = {}
+# for cluster_name in CLUSTER_CONFIG:
+#     cluster_stats[cluster_name] = {
+#         'cpu_real': [],
+#         'ram_real': [],
+#         'cpu_reserve': [],
+#         'ram_reserve': [],
+#     }
 # New dictionary to track latency metrics (in time units)
 latency_stats = {
     'total_latency': 0.0,

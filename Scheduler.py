@@ -1,7 +1,7 @@
 import abc
 import random
-from typing import Optional, List, Dict, Any
-from variables import request_stats, app_stats
+# from typing import Optional, List, Dict, Any
+from variables import request_stats, app_stats, VERBOSE
 
 class Scheduler(abc.ABC):
     """
@@ -11,7 +11,7 @@ class Scheduler(abc.ABC):
     that determine where to place containers and how to manage their lifecycle.
     """
     
-    def __init__(self, env, cluster, idle_timeout_cluster=None, verbose=False):
+    def __init__(self, env, cluster, idle_timeout_cluster=None):
         """
         Initialize the scheduler.
         
@@ -24,7 +24,7 @@ class Scheduler(abc.ABC):
         self.env = env
         self.cluster = cluster
         self.idle_timeout_cluster = idle_timeout_cluster
-        self.verbose = verbose
+        # self.verbose = verbose
         
     @abc.abstractmethod
     def find_server_for_spawn(self, request):
@@ -66,14 +66,14 @@ class Scheduler(abc.ABC):
             Server instance or None if no suitable server was found
         """
         # No idle container; spawn a new one using a server from the cluster.
-        if self.verbose:
+        if VERBOSE:
             print(f"{self.env.now:.2f} - No idle container found for {request} in {cluster_name} cluster. Attempting to spawn.")
         
         # Use the scheduler to find a server
         server = self.find_server_for_spawn(request)
         
         if server:
-            if self.verbose:
+            if VERBOSE:
                 print(f"{self.env.now:.2f} - Found potential {server} in {cluster_name} cluster for spawning container for {request}")
             request_stats['container_spawns_initiated'] += 1
             app_stats[request.app_id]['container_spawns_initiated'] += 1
@@ -113,7 +113,7 @@ class FirstFitScheduler(Scheduler):
             idle_timeout_cluster: Dict contains idle timeouts for each app
             verbose: Flag to control logging output
         """
-        super().__init__(env, cluster, idle_timeout_cluster, verbose)
+        super().__init__(env, cluster, idle_timeout_cluster)
         self._stats = {
             'placement_attempts': 0,
             'placement_successes': 0,
@@ -190,7 +190,7 @@ class BestFitScheduler(Scheduler):
             idle_timeout_mean: Base mean value for exponentially distributed idle timeouts
             idle_timeout_factor: Factor to adjust timeouts based on system load
         """
-        super().__init__(env, cluster, idle_timeout_cluster, verbose)
+        super().__init__(env, cluster, idle_timeout_cluster)
         self.idle_timeout_mean = idle_timeout_mean
         self.idle_timeout_factor = idle_timeout_factor
         self._stats = {
