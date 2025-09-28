@@ -2,7 +2,7 @@ import simpy
 import math
 import random
 import itertools
-from variables import *
+import variables
 from Request import Request
 from Scheduler import FirstFitScheduler  # Import our new scheduler
 from LoadBalancer import LoadBalancer  # Import our new LoadBalancer
@@ -21,7 +21,7 @@ class System:
         # generate idle timeout for applications
         # NOTE: later custom timeout per application per cluster can be implemented
         self.idle_timeout_cluster = {}
-        for app_id in APPLICATIONS:
+        for app_id in variables.APPLICATIONS:
             self.idle_timeout_cluster[app_id] = 2
         # Initialize schedulers and idle container pools for each cluster
         self.schedulers = {}
@@ -30,7 +30,7 @@ class System:
         for cluster_name, cluster in self.clusters.items():
             self.schedulers[cluster_name] = scheduler_class(env, cluster, self.idle_timeout_cluster)
             self.app_idle_containers[cluster_name] = {}
-            for app_id in APPLICATIONS:
+            for app_id in variables.APPLICATIONS:
                 self.app_idle_containers[cluster_name][app_id] = []
         # Initialize the LoadBalancer (now handling multiple clusters)
         self.load_balancer = LoadBalancer(env, self, self.schedulers)
@@ -45,19 +45,20 @@ class System:
         """Generates requests for all defined applications."""
         # node_intensity is a percentage (0-100) that determines which level 3 nodes generate requests
         total_request = 0
-        for app_id in APPLICATIONS:
+        for app_id in variables.APPLICATIONS:
             for node_id, node_data in self.topology.graph.nodes(data=True):
                 if node_data['level'] == 3:  # Only level 3 nodes can generate requests
                     # Only generate requests with node_intensity probability
                     if random.random() * 100 < node_intensity:
-                        arrival_rate = math.ceil(node_data['population'] * TRAFFIC_INTENSITY)
+                        arrival_rate = round(node_data['population'] * variables.TRAFFIC_INTENSITY)
                         total_request += arrival_rate
-                        self.env.process(self.app_request_generator(app_id, node_id, arrival_rate))
+                        if arrival_rate > 0:
+                            self.env.process(self.app_request_generator(app_id, node_id, arrival_rate))
         print(f"Total expected request arrival rate: {total_request}.")
 
     def app_request_generator(self, app_id, node_id, arrival_rate):
         """Generates requests for a specific application according to its Poisson process."""
-        app_config = APPLICATIONS[app_id]
+        app_config = variables.APPLICATIONS[app_id]
         data_location = app_config["data_location"]
         # No defined period, keep generating until simulation time ends
         while True:
@@ -70,7 +71,7 @@ class System:
             arrival_time = self.env.now
             
             # Generate resource demands for this app
-            resource_demand = generate_app_demands(app_id)
+            resource_demand = variables.generate_app_demands(app_id)
             
             # Generate the request
             request = Request(req_id, arrival_time, resource_demand, node_id, data_node = data_location, app_id=app_id)
@@ -78,7 +79,7 @@ class System:
             # Update statistics
             self.update_start_statistics(request)
 
-            if VERBOSE:
+            if variables.VERBOSE:
                 print(f"{self.env.now:.2f} - Request Generated: {request}")
 
             # Start the handling process for this request
@@ -107,8 +108,10 @@ class System:
         if assignment_result:
             # Start using topology paths
             self.topology.make_paths(request, target_clusters[cluster])
+            self.topology.update_request_delay(request, target_clusters[cluster], type='upload')
             # Start the service lifecycle 
             yield self.env.process(container.service_lifecycle())
+            self.topology.update_request_delay(request, target_clusters[cluster], type='download')
             # Update statistics
             self.update_end_statistics(request, 'success')
             # Release request and resources
@@ -130,51 +133,66 @@ class System:
     #     self.app_idle_containers[cluster_name][container.app_id].append(container)
     
     def update_start_statistics(self, request):
-        request_stats['generated'] += 1
-        app_stats[request.app_id]['generated'] += 1
+        variables.request_stats['generated'] += 1
+        # app_stats[request.app_id]['generated'] += 1
 
     def update_end_statistics(self, request, type, link_failed_map=None):
         if type == 'compute_failed':
-            request_stats['blocked_no_server_capacity'] += 1
-            app_stats[request.app_id]['blocked_no_server_capacity'] += 1
+            variables.request_stats['blocked_no_server_capacity'] += 1
+            # app_stats[request.app_id]['blocked_no_server_capacity'] += 1
 
         elif type == 'link_failed':
-            request_stats['blocked_no_path'] += 1
-            app_stats[request.app_id]['blocked_no_path'] += 1
+            variables.request_stats['blocked_no_path'] += 1
+            # app_stats[request.app_id]['blocked_no_path'] += 1
             for value in link_failed_map.values():
-                request_stats['bocked_no_path_level_3-3'] += value.get('3-3', 0)
-                request_stats['bocked_no_path_level_3-2'] += value.get('3-2', 0)
-                request_stats['bocked_no_path_level_2-2'] += value.get('2-2', 0)
-                request_stats['bocked_no_path_level_2-1'] += value.get('2-1', 0)
-                request_stats['bocked_no_path_level_1-1'] += value.get('1-1', 0)
-                request_stats['bocked_no_path_level_1-0'] += value.get('1-0', 0)
-                request_stats['bocked_no_path_level_0-0'] += value.get('0-0', 0)
+                variables.request_stats['blocked_no_path_level_3-3'] += value.get('3-3', 0)
+                variables.request_stats['blocked_no_path_level_3-2'] += value.get('3-2', 0)
+                variables.request_stats['blocked_no_path_level_2-2'] += value.get('2-2', 0)
+                variables.request_stats['blocked_no_path_level_2-1'] += value.get('2-1', 0)
+                variables.request_stats['blocked_no_path_level_1-1'] += value.get('1-1', 0)
+                variables.request_stats['blocked_no_path_level_1-0'] += value.get('1-0', 0)
+                variables.request_stats['blocked_no_path_level_0-0'] += value.get('0-0', 0)
         else:
             # Service finished
-            request_stats['processed'] += 1
-            app_stats[request.app_id]['processed'] += 1
+            variables.request_stats['processed'] += 1
+            # app_stats[request.app_id]['processed'] += 1
             
             # Record request location
             if request.assigned_cluster.startswith("cloud"):
-                request_stats['offloaded_to_cloud'] += 1
+                variables.request_stats['offloaded_to_cloud'] += 1
             # Compute latencies: sum of propagation, spawn, and processing times
-            total_latency = request.prop_delay + request.spawn_time + request.processing_time
+            total_latency = request.network_delay + request.spawn_time + request.processing_time
             
             # Update global latency stats
-            latency_stats['total_latency'] += total_latency
-            latency_stats['propagation_delay'] += request.prop_delay
-            latency_stats['spawning_time'] += request.spawn_time
-            latency_stats['processing_time'] += request.processing_time
-            latency_stats['waiting_time'] += request.waiting_time  # Add waiting time to stats
-            latency_stats['count'] += 1
+            variables.latency_stats['total_latency'] += total_latency
+            variables.latency_stats['propagation_delay'] += request.prop_delay
+            variables.latency_stats['spawning_time'] += request.spawn_time
+            variables.latency_stats['processing_time'] += request.processing_time
+            variables.latency_stats['network_time'] += request.network_delay  # Add network time to stats
+            # latency_stats['waiting_time'] += request.waiting_time  # Add waiting time to stats
+            variables.latency_stats['count'] += 1
+
+            # Update congested path statistics
+            if request.bottleneck is not None:
+                variables.congested_paths[request.bottleneck] += 1
+            # if request.data_path_required and request.bottleneck_indirect is not None:
+            #     variables.congested_paths[request.bottleneck_indirect] += 1
+
+            # Update accumulated path latency from request delays
+            # for level, delay in request.delay_by_level_direct.items():
+            #     accumulated_path_latency[level] += delay/request.network_delay
+            
+            # if request.data_path_required:
+            #     for level, delay in request.delay_by_level_indirect.items():
+            #         accumulated_path_latency[level] += delay/request.network_delay
             
             # Update app-specific latency stats
-            app_latency_stats[request.app_id]['total_latency'] += total_latency
-            app_latency_stats[request.app_id]['propagation_delay'] += request.prop_delay
-            app_latency_stats[request.app_id]['spawning_time'] += request.spawn_time
-            app_latency_stats[request.app_id]['processing_time'] += request.processing_time
-            app_latency_stats[request.app_id]['waiting_time'] += request.waiting_time  # Add app-specific waiting time
-            app_latency_stats[request.app_id]['count'] += 1
+            # app_latency_stats[request.app_id]['total_latency'] += total_latency
+            # app_latency_stats[request.app_id]['propagation_delay'] += request.prop_delay
+            # app_latency_stats[request.app_id]['spawning_time'] += request.spawn_time
+            # app_latency_stats[request.app_id]['processing_time'] += request.processing_time
+            # app_latency_stats[request.app_id]['waiting_time'] += request.waiting_time  # Add app-specific waiting time
+            # app_latency_stats[request.app_id]['count'] += 1
         
         
        

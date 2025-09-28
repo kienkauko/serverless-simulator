@@ -1,6 +1,6 @@
 import simpy
 import random
-from variables import VERBOSE
+import variables
 
 class LoadBalancer:
     """Handles assignment of requests to containers using different strategies."""
@@ -115,17 +115,17 @@ class LoadBalancer:
             # No idle containers available, let the scheduler handle container spawning
             scheduler = self.schedulers[cluster_name]
             # path = paths.get(selected_cluster) if paths else None
-            spawn_result, container = yield self.env.process(scheduler.spawn_container_for_request(request, self.system, cluster_name))            
+            spawn_result, container = yield self.env.process(scheduler.spawn_container_for_request(request, self.system))            
             
             if spawn_result:
                 return True, container, cluster
             else:
-                if VERBOSE:
+                if variables.VERBOSE:
                     print(f"{self.env.now:.2f} - No server with sufficient capacity in {cluster_name} cluster for {request}")
                 # Continue to next cluster if this one doesn't have resources
         
         # If we've tried all clusters and none worked, the request is blocked
-        if VERBOSE:
+        if variables.VERBOSE:
             print(f"{self.env.now:.2f} - BLOCK: No cluster with sufficient capacity for {request}")
         return False, None, None
                 
@@ -142,7 +142,7 @@ class LoadBalancer:
         # If this container was idle, cancel its removal timeout
         # print(f"{self.env.now:.2f} - {self} status: {self.idle_timeout_process}.")
         if container.idle_timeout_process and not container.idle_timeout_process.triggered:
-            if VERBOSE:
+            if variables.VERBOSE:
                 print(f"{self.env.now:.2f} - Cancelling idle timeout for reused {container}")
             container.idle_timeout_process.interrupt()
             container.idle_timeout_process = None  # Clear the process handle

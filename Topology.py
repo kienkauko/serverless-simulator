@@ -3,14 +3,15 @@ import json
 import math
 from pyproj import Transformer
 from Cluster import Cluster
-from variables import *
+import variables
 
 class Topology:
-    def __init__(self, env, edge_path, cluster_info):
+    def __init__(self, env, edge_path, cluster_info, network_model='reservation'):
         # self.clusters = clusters
         # Store edge cluster for easy access if provided
         # self.edge_cluster = [cluster for cluster_name, cluster in clusters.items() if cluster_name == "edge"] if clusters else []
-        print("Initializing topology...")
+        print(f"Initializing topology with network model: {network_model}...")
+        self.network_model = network_model
         # Initialize graph
         self.graph = nx.DiGraph()
         self.env = env
@@ -66,31 +67,46 @@ class Topology:
                 node1_level = self.graph.nodes[n1_id]['level']
                 node2_level = self.graph.nodes[n2_id]['level']
                 combined_level = f"{node1_level}-{node2_level}"
-                # Add edge to the graph with bandwidth and latency
-                self.graph.add_edge(n1_id, n2_id, 
-                                   bandwidth=bandwidth, 
-                                   available_bandwidth=bandwidth, 
-                                   latency=latency,
-                                   level=combined_level)
+                
+                # Add edge to the graph with attributes based on the network model
+                if self.network_model == 'reservation':
+                    self.graph.add_edge(n1_id, n2_id, 
+                                       bandwidth=bandwidth, 
+                                       available_bandwidth=bandwidth, 
+                                       latency=latency,
+                                       level=combined_level)
+                elif self.network_model == 'ps':
+                    self.graph.add_edge(n1_id, n2_id, 
+                                       bandwidth=bandwidth, 
+                                       num_active_flows=0, 
+                                       latency=latency,
+                                       level=combined_level)
 
         # Load cluster information from JSON
         with open(cluster_info, 'r') as f:
             cluster_data = json.load(f)
         for cluster_name, config in cluster_data.items():
             # Create the cluster with its servers
-            self.clusters[cluster_name] = Cluster(self.env, cluster_name, config)
+            if variables.CLUSTER_STRATEGY != "distributed_cloud":
+                cluster_name = variables.CENTRAL_CLOUD
+                self.clusters[cluster_name] = Cluster(self.env, cluster_name, config)
+                self.cloud_clusters[cluster_name] = self.clusters[cluster_name]
+                break  # Only one cluster needed
+            else:
+                self.clusters[cluster_name] = Cluster(self.env, cluster_name, config)
             # Store cloud clusters separately for later usage
+            # NOTE: these logics are not very useful in current implementation
             if cluster_name.startswith("cloud"):
                 self.cloud_clusters[cluster_name] = self.clusters[cluster_name]
 
         # Initialize nearby clusters for each node
-        if CLUSTER_STRATEGY != "centralized_cloud":
-            print("Calculating nearby clusters for each node based on strategy: ", CLUSTER_STRATEGY)
-            if CLUSTER_STRATEGY == "massive_edge_cloud":
-                self.edge_clusters = self.defined_edge_DCs(EDGE_DC_LEVEL)
+        if variables.CLUSTER_STRATEGY != "centralized_cloud":
+            print("Calculating nearby clusters for each node based on strategy: ", variables.CLUSTER_STRATEGY)
+            if variables.CLUSTER_STRATEGY.startswith("massive_edge"):
+                self.edge_clusters = self.defined_edge_DCs(variables.EDGE_DC_LEVEL)
                 self.clusters.update(self.edge_clusters)
             for node_id in [n for n, data in self.graph.nodes(data=True) if data.get('level') == 3]:
-                nearby_clusters = self.get_nearby(CLUSTER_STRATEGY, node_id, EDGE_DC_LEVEL)
+                nearby_clusters = self.get_nearby(variables.CLUSTER_STRATEGY, node_id, variables.EDGE_DC_LEVEL)
                 self.graph.nodes[node_id]['nearby_clusters'] = nearby_clusters
 
         print("Topology initialized.")
@@ -199,21 +215,20 @@ class Topology:
         # Check bandwidth constraints if path exists
         if path:
             self.save_cached_path(src, dst, path)
-            for i in range(len(path)-1):
-                edge = self.graph.get_edge_data(path[i], path[i+1])
-                # level = edge.get('level', 'unknown')
-                # if level == '2-3':
-                #     print("source node: ", path[i], " dst node: ", path[i+1])
-                #     pass
-                if edge['available_bandwidth'] < required_bw:
-                    # Record the level of the failed link
-                    level = edge.get('level', 'unknown')
-                    if level not in failed_links_by_level:
-                        failed_links_by_level[level] = 0
-                    failed_links_by_level[level] += 1
-                    return False, None, failed_links_by_level
-            
-            return True, path, failed_links_by_level
+            if self.network_model == 'reservation':
+                for i in range(len(path)-1):
+                    edge = self.graph.get_edge_data(path[i], path[i+1])
+                    if edge['available_bandwidth'] < required_bw:
+                        # Record the level of the failed link
+                        level = edge.get('level', 'unknown')
+                        if level not in failed_links_by_level:
+                            failed_links_by_level[level] = 0
+                        failed_links_by_level[level] += 1
+                        return False, None, failed_links_by_level
+                return True, path, failed_links_by_level
+            elif self.network_model == 'ps':
+                # In PS model, we don't reject based on bandwidth.
+                return True, path, failed_links_by_level
         
         # if failed_links_by_level.empty():
         #     return True, None, failed_links_by_level
@@ -305,7 +320,7 @@ class Topology:
                         # check if grandparents are connected through great-grandparent
                         if src_ggparent == dst_ggparent:
                             path_final = path_1 + path_4[1:] + [src_ggparent] + path_5 + path_2[1:]
-                            return path_final 
+                            return path_final
                         # paths.append([src_grandparent, src_ggparent], [dst_ggparent, dst_grandparent])
                         else:
                             # simply add last path connecting ggparent together
@@ -329,36 +344,147 @@ class Topology:
     #     return total_latency
     
     def implement_path(self, path, bw):
-        """Reserve bandwidth along a path"""
-        if not path or len(path) < 2 or bw is None:
+        """Reserve bandwidth along a path or increment flow count."""
+        if not path or len(path) < 2:
             return
             
         for i in range(len(path)-1):
-            # Double check bandwidth availability
-            # if self.graph.get_edge_data(path[i], path[i+1])['available_bandwidth'] < bw:
-            #     raise ValueError(f"Insufficient bandwidth on edge {path[i]}-{path[i+1]} for {bw} units")
-                        
-            self.graph[path[i]][path[i+1]]['available_bandwidth'] -= bw
+            if self.network_model == 'reservation':
+                self.graph[path[i]][path[i+1]]['available_bandwidth'] -= bw
+            elif self.network_model == 'ps':
+                self.graph[path[i]][path[i+1]]['num_active_flows'] += 1
 
     def release_path(self, path, bw):
-        """Release bandwidth along a path"""
-        if not path or len(path) < 2 or bw is None:
+        """Release bandwidth along a path or decrement flow count."""
+        if not path or len(path) < 2:
             return
             
         for i in range(len(path)-1):
-            self.graph[path[i]][path[i+1]]['available_bandwidth'] += bw
+            if self.network_model == 'reservation':
+                if bw is not None:
+                    self.graph[path[i]][path[i+1]]['available_bandwidth'] += bw
+            elif self.network_model == 'ps':
+                self.graph[path[i]][path[i+1]]['num_active_flows'] -= 1
     
+    def get_path_transmission_delay(self, path, packet_size):
+        """
+        Calculate the total transmission delay of a path for the PS model.
+        This version models pipelining by finding the bottleneck link.
+        The total delay is determined by the slowest link in the path.
+        Returns a tuple: (total_transmission_delay, bottleneck_level, delay_by_level).
+        """
+        if not path or len(path) < 2 or packet_size is None:
+            return 0, None, {}
+        
+        bottleneck_bandwidth = float('inf')
+        bottleneck_level = None
+        delay_by_level = {} # This will represent the delay contribution if this level were the bottleneck
+
+        # First, find the bottleneck bandwidth for the new flow along the path
+        for i in range(len(path) - 1):
+            edge_data = self.graph.get_edge_data(path[i], path[i+1])
+            link_capacity = edge_data['bandwidth']
+            # Add 1 to num_flows to account for the current request
+            num_flows = edge_data['num_active_flows'] + 1
+            
+            flow_bandwidth = link_capacity / num_flows
+            
+            if flow_bandwidth < bottleneck_bandwidth:
+                bottleneck_bandwidth = flow_bandwidth
+                bottleneck_level = edge_data.get('level', 'unknown')
+
+        # Calculate total transmission delay based on the single bottleneck link
+        if bottleneck_bandwidth > 0:
+            total_transmission_delay = packet_size / bottleneck_bandwidth
+        else:
+            total_transmission_delay = float('inf')
+
+        # For logging/analysis, we can still calculate what the delay would be per level
+        # Note: This is for analysis only, these delays are not summed.
+        # for i in range(len(path) - 1):
+        #     edge_data = self.graph.get_edge_data(path[i], path[i+1])
+        #     link_capacity = edge_data['bandwidth']
+        #     num_flows = edge_data['num_active_flows'] + 1
+        #     flow_bandwidth = link_capacity / num_flows
+        #     link_delay = packet_size / flow_bandwidth
+        #     level = edge_data.get('level', 'unknown')
+            # delay_by_level[level] = delay_by_level.get(level, 0) + link_delay
+
+        return total_transmission_delay, bottleneck_level
+
+    def update_request_delay(self, request, paths, type='upload'):
+        """Calculate propagation and transmission delays for the given paths."""
+        if type == 'upload':
+            path_direct, path_indirect = paths[0], paths[1]
+            packet_size_direct = request.packet_size_direct_upload
+            packet_size_indirect = request.packet_size_indirect_upload
+        elif type == 'download':
+            path_direct, path_indirect = paths[0][::-1], paths[1][::-1]
+            packet_size_direct = request.packet_size_direct_download
+            packet_size_indirect = request.packet_size_indirect_download
+        else:
+            raise ValueError(f"Unknown delay type: {type}")
+        
+        # NOTE: current reservation is behind updates -> it's wrong
+        if self.network_model == 'reservation':
+            prop_delay = 0
+            if request.data_path_required:
+                prop_delay = self.get_path_latency(path_direct) + self.get_path_latency(path_indirect) * 2  # Round trip
+            else:
+                prop_delay = self.get_path_latency(path_direct) * 2
+            # Set delays variables
+            request.prop_delay += prop_delay / 1000  # Convert ms to seconds
+            request.network_delay += request.prop_delay  
+
+        else:   # PS model
+            # Static propagation delay
+            prop_delay = self.get_path_latency(path_direct)
+            # Dynamic transmission delay and returns bottleneck info
+            trans_delay_direct, bottleneck_direct = self.get_path_transmission_delay(path_direct, packet_size_direct)
+            trans_delay_indirect, bottleneck_indirect = 0, None
+
+            if request.data_path_required:
+                prop_delay += self.get_path_latency(path_indirect)
+                trans_delay_indirect, bottleneck_indirect = self.get_path_transmission_delay(path_indirect, packet_size_indirect)
+
+            request.prop_delay += prop_delay / 1000  # Convert ms to seconds
+            
+            # Store bottleneck info on the request
+            max_trans_delay = max(trans_delay_direct, trans_delay_indirect)
+            if max_trans_delay > request.max_trans_delay:
+                request.max_trans_delay = max_trans_delay
+                if max_trans_delay ==  trans_delay_direct:
+                    request.bottleneck = bottleneck_direct
+                else:
+                    request.bottleneck = bottleneck_indirect
+            # request.delay_by_level_direct = delay_by_level_direct
+            # request.delay_by_level_indirect = delay_by_level_indirect
+
+            # Total network delay
+            request.network_delay += (request.prop_delay + trans_delay_direct + trans_delay_indirect)
+
     def make_paths(self, request, paths):
-        """Setup bandwidth and propagation delay for the request"""
-        self.implement_path(paths[0], request.bandwidth_direct)
-        request.prop_delay += self.get_path_latency(paths[0])*2  # Round trip
-        self.implement_path(paths[1], request.bandwidth_indirect)
-        request.prop_delay += self.get_path_latency(paths[1])
-    
+        """Implement bandwidth reservation or flow counting for the given paths."""
+        if self.network_model == 'reservation':
+            self.implement_path(paths[0], request.bandwidth_direct)
+            if request.data_path_required:
+                self.implement_path(paths[1], request.bandwidth_indirect)
+        elif self.network_model == 'ps':
+            self.implement_path(paths[0], None)
+            if request.data_path_required:
+                self.implement_path(paths[1], None)
+
+
     def remove_paths(self, request, paths):
         """Release bandwidth for paths"""
-        self.release_path(paths[0], request.bandwidth_direct)
-        self.release_path(paths[1], request.bandwidth_indirect)
+        if self.network_model == 'reservation':
+            self.release_path(paths[0], request.bandwidth_direct)
+            if request.data_path_required:
+                self.release_path(paths[1], request.bandwidth_indirect)
+        elif self.network_model == 'ps':
+            self.release_path(paths[0], None)
+            if request.data_path_required:
+                self.release_path(paths[1], None)
     
     def find_cluster(self, request):
         """Find appropriate clusters for request processing
@@ -370,23 +496,27 @@ class Topology:
         found_direct = False
         found_indirect = False
 
-        if CLUSTER_STRATEGY == 'centralized_cloud':
+        if variables.CLUSTER_STRATEGY == 'centralized_cloud':
             # direct to cloud
             found_direct, path_direct, failed_links_map = self.find_possible_path(
                 request.origin_node,
-                self.clusters[CENTRAL_CLOUD].node,
+                self.clusters[variables.CENTRAL_CLOUD].node,
                 request.bandwidth_direct
             )
             # from cloud to data
             if found_direct:
-                found_indirect, path_indirect, failed_links_map = self.find_possible_path(
-                    self.clusters[CENTRAL_CLOUD].node,
-                    request.data_node,
-                    request.bandwidth_indirect
-                )
+                if request.data_path_required:
+                    found_indirect, path_indirect, failed_links_map = self.find_possible_path(
+                        self.clusters[variables.CENTRAL_CLOUD].node,
+                        request.data_node,
+                        request.bandwidth_indirect
+                    )
+                else:
+                    found_indirect = True
+                    path_indirect = []
             # if both paths found, return them
             if found_direct and found_indirect:
-                list_paths[self.clusters[CENTRAL_CLOUD]] = [path_direct, path_indirect]
+                list_paths[self.clusters[variables.CENTRAL_CLOUD]] = [path_direct, path_indirect]
                 # failed_links_map[self.clusters['cloud']] = combined
                 return True, list_paths, {}
             else:
@@ -409,11 +539,15 @@ class Topology:
                 )
                 # from cloud to data
                 if found_direct:
-                    found_indirect, path_indirect, failed_links_map = self.find_possible_path(
-                        cluster.node,
-                        request.data_node,
-                        request.bandwidth_indirect
-                    )
+                    if request.data_path_required:
+                        found_indirect, path_indirect, failed_links_map = self.find_possible_path(
+                            cluster.node,
+                            request.data_node,
+                            request.bandwidth_indirect
+                        )
+                    else:
+                        found_indirect = True
+                        path_indirect = []
                 # if both paths found, return them
                 if found_direct and found_indirect:
                     list_paths[cluster] = [path_direct, path_indirect]
@@ -469,21 +603,29 @@ class Topology:
     # Add a similar cache for path latency
 
     def get_path_latency(self, path):
-        """Calculate the total latency of a path with caching"""
+        """Calculate the total latency of a path with caching.
+        The cache is bidirectional; latency for a path is the same as for its reverse.
+        """
         if not path or len(path) < 2:
             return 0
         
-        # Create immutable key for cache
-        path_key = tuple(path)
+        # Create a canonical, immutable key for the cache.
+        # This ensures that path (a,b,c) and (c,b,a) use the same cache entry.
+        # We use the lexicographically smaller of the start/end nodes to decide the key's direction.
+        if path[0] <= path[-1]:
+            path_key = tuple(path)
+        else:
+            path_key = tuple(reversed(path))
         
-        # Check if latency is cached
+        # Check if latency is cached using the canonical key
         if path_key in self.path_latency_cache:
             return self.path_latency_cache[path_key]
         
-        # Else: Calculate latency
+        # Else: Calculate latency for the original path direction
         total_latency = sum(self.graph.get_edge_data(path[i], path[i+1])['latency'] 
                            for i in range(len(path)-1))
-        # Cache the result
+        
+        # Cache the result using the canonical key
         self.path_latency_cache[path_key] = total_latency
         return total_latency
     
@@ -506,7 +648,7 @@ class Topology:
             # Sort clusters by latency (proximity)
             sorted_clusters = [c for c, _ in sorted(clusters_with_latencies, key=lambda x: x[1])]
             return sorted_clusters
-        elif type == 'massive_edge_cloud':
+        elif type.startswith('massive_edge'):
             if level == 1:
                 parent = self.graph.nodes[self.graph.nodes[node]['parent']]['parent']
             elif level == 2:
@@ -521,10 +663,12 @@ class Topology:
                 if cluster.node == parent:
                     sorted_clusters.append(cluster) 
                     break
-            for cluster_name, cluster in self.cloud_clusters.items():
-                if cluster_name == CENTRAL_CLOUD:
-                    sorted_clusters.append(cluster) 
-                    break  
+            # Add central cloud for massive_edge_cloud strategy
+            if type == 'massive_edge_cloud':
+                for cluster_name, cluster in self.cloud_clusters.items():
+                    if cluster_name == variables.CENTRAL_CLOUD:
+                        sorted_clusters.append(cluster) 
+                        break  
             return sorted_clusters                             
         else:
             raise ValueError(f"Unknown cluster type for proximity search: {type}")
@@ -539,8 +683,8 @@ class Topology:
             return {}
         
         # Calculate servers per cluster (distribute evenly)
-        servers_per_cluster = EDGE_SERVER_NUMBER // num_level_nodes
-        remaining_servers = EDGE_SERVER_NUMBER % num_level_nodes
+        servers_per_cluster = variables.EDGE_SERVER_NUMBER // num_level_nodes
+        remaining_servers = variables.EDGE_SERVER_NUMBER % num_level_nodes
         
         edge_clusters = {}
         
@@ -557,8 +701,7 @@ class Topology:
                 "server_cpu": 100.0,
                 "server_ram": 100.0,
                 "power_max": 60,
-                "power_min": 10,
-                "spawn_time_factor": 1.0
+                "power_min": 10
             }
 
             edge_clusters[cluster_name] = Cluster(self.env, cluster_name, config)

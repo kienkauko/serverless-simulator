@@ -1,15 +1,15 @@
 from Server import Server
-from variables import CLUSTER_STRATEGY, CENTRAL_CLOUD_NODE
+import variables 
 
 class Cluster:
     def __init__(self, env, name, config=None):
         self.name = name
         self.env = env           
         # self.verbose = verbose  # Flag to control logging output
-        if CLUSTER_STRATEGY == "centralized_cloud":
-            self.servers = [Server(env, self, 0, config)]
-        else:            
-            self.servers = [Server(env, self, i, config) for i in range(config["num_servers"])]
+        # if variables.CLUSTER_STRATEGY == "centralized_cloud":
+        #     self.servers = [Server(env, self, i, config)]
+        # else:            
+        self.servers = [Server(env, self, i, config) for i in range(config["num_servers"])]
         self.node = config["node"]  # Topology node where this cluster is located
         self.num_servers = len(self.servers)
         self.total_cpu_capacity = self.servers[0].cpu_capacity * self.num_servers
@@ -24,6 +24,9 @@ class Cluster:
         self.total_cpu_capacity = 0.0  # Total CPU capacity of all servers
         self.total_ram_capacity = 0.0  # Total RAM capacity of all servers
         self.total_energy_usage_area = 0.0  # Time-weighted CPU usage
+
+        self.spawn_time_factor = config.get('spawn_time_factor', 1.0)  # Default to 1.0 if not specified
+        self.processing_time_factor = config.get('processing_time_factor', 1.0)  # Default to 1.0 if not specified
 
     def get_utilization(self):
         result = []
@@ -97,11 +100,11 @@ class Cluster:
                 return self.total_ram_reserve_area / (self.env.now*self.total_ram_capacity)
     
 
-    def get_mean_power(self, type):
+    def get_mean_power(self, type='cluster'):
         """Calculate the mean CPU usage over time."""
         # Update statistics first to include latest data
         # self.update_resource_stats()
-        if CLUSTER_STRATEGY == "centralized_cloud":
+        if variables.CLUSTER_STRATEGY == "centralized_cloud":
             print("WARNING: Current strategy is centralized cloud, power is not correct!")
         if type == 'cluster':
             return self.total_energy_usage_area / (self.env.now)

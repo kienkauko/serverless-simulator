@@ -1,12 +1,13 @@
 {
     "cloud-01": {
         "node": "12876",
-        "num_servers": 200,
+        "num_servers": 7000, 
         "server_cpu": 200.0,
         "server_ram": 200.0,
         "power_max": 150,
         "power_min": 50,
-        "spawn_time_factor": 0.5
+        "spawn_time_factor": 0.5,
+        "processing_time_factor": 0.6
     },
     "cloud-02": {
         "node": "12877",
@@ -15,7 +16,8 @@
         "server_ram": 200.0,
         "power_max": 150,
         "power_min": 50,
-        "spawn_time_factor": 0.5
+        "spawn_time_factor": 0.5,
+        "processing_time_factor": 0.6
     },
     "cloud-03": {
         "node": "12878",
@@ -24,7 +26,8 @@
         "server_ram": 200.0,
         "power_max": 150,
         "power_min": 50,
-        "spawn_time_factor": 0.5
+        "spawn_time_factor": 0.5,
+        "processing_time_factor": 0.6
     },
     "cloud-04": {
         "node": "12879",
@@ -33,7 +36,8 @@
         "server_ram": 200.0,
         "power_max": 150,
         "power_min": 50,
-        "spawn_time_factor": 0.5
+        "spawn_time_factor": 0.5,
+        "processing_time_factor": 0.6
     },
     "cloud-05": {
         "node": "12880",
@@ -42,6 +46,7 @@
         "server_ram": 200.0,
         "power_max": 150,
         "power_min": 50,
-        "spawn_time_factor": 0.5
+        "spawn_time_factor": 0.5,
+        "processing_time_factor": 0.6
     }
 }

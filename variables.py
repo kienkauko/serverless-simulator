@@ -9,11 +9,14 @@ CONTAINER_ASSIGN_RATE = 1000000.0 # Average rate for request assignment (very fa
 
 # Topology configuration
 USE_TOPOLOGY = True  # Enable topology routing
+NETWORK_MODEL = "ps" # Options: "ps", "reservation"
 CLUSTER_STRATEGY = "centralized_cloud"  # Options: "massive_edge_cloud", "centralized_cloud", "distributed_cloud"
 CENTRAL_CLOUD = "cloud-01"  # Central cloud node ID in the topology
 CENTRAL_CLOUD_NODE = "12876"  # Central cloud node ID in the topology
-EDGE_SERVER_NUMBER = 4000  # CPU capacity for all MECs
+EDGE_SERVER_NUMBER = 5000  # CPU capacity for all MECs
 EDGE_DC_LEVEL = 1
+CLOUD_SPAWN_TIME_FACTOR = 0.5  # Cloud spawn time multiplier (faster)
+CLOUD_PROCESSING_TIME_FACTOR = 0.6  # Cloud processing time multiplier (faster)
 # EDGE_RESOURCE_RAM = 100000.0   # RAM capacity for all MECs
 # --- Multi-Cluster Configuration ---
 # Define the parameters for each cluster
@@ -39,25 +42,30 @@ EDGE_DC_LEVEL = 1
 # }
 
 # Traffic intensity factor to scale arrival rates based on node population
-TRAFFIC_INTENSITY = 0.0001  # Adjust this factor to scale overall traffic
+TRAFFIC_INTENSITY = 0.0008  # Adjust this factor to scale overall traffic, default: 0.0001
 NODE_INTENSITY = 10  # Percentage of level 3 nodes generating traffic (0-100)
 # Application definitions for heterogeneous workloads
 APPLICATIONS = {
-    "app1": {
+    "app1": { # a Tiktok video sent to Cloud for processing (10s)
         # "arrival_rate": 50.0,  # Requests per time unit
-        "service_rate": 2.0,  # Service completions per time unit
+        "service_rate": 1/5.0,  # To compute processing time only, process may take 5s
         "base_spawn_time": 5.0,  # Base time units to spawn a container (modified by cluster factor)
         "min_warm_cpu": 0.5,  # Minimum CPU for warm container
         "max_warm_cpu": 0.5,  # Maximum CPU for warm container
         "min_warm_ram": 5.0,  # Minimum RAM for warm container
         "max_warm_ram": 5.0, # Maximum RAM for warm container
-        "min_req_cpu": 50.0,  # Minimum CPU demand for request
-        "max_req_cpu": 50.0,  # Maximum CPU demand for request
-        "min_req_ram": 20.0,  # Minimum RAM demand for request
-        "max_req_ram": 20.0,  # Maximum RAM demand for request
+        "min_req_cpu": 20.0,  # Minimum CPU demand for request
+        "max_req_cpu": 20.0,  # Maximum CPU demand for request
+        "min_req_ram": 7.0,  # Minimum RAM demand for request
+        "max_req_ram": 7.0,  # Maximum RAM demand for request
         "bandwidth_direct": 40000000,  # Bandwidth demand for this application: bit per second
         "bandwidth_indirect": 1000000,  # Bandwidth demand for this application: bit per second
         "data_location": "12876",  # Location of data for this application - Cloud node
+        "packet_size_direct_upload": 83886080,  # in bits, default to 10 MB
+        "packet_size_direct_download": 81920,  # in bits, default to 10 KB
+        "data_path_required": False,  # Whether data path is required
+        "packet_size_indirect_upload": 0,  # in bits, default to 10 MB
+        "packet_size_indirect_download": 0,  # in bits, default to 10 MB
     },
     # "app2": {
     #     "arrival_rate": 30.0,
@@ -107,13 +115,33 @@ request_stats = {
     'containers_reused': 0,
     'containers_removed_idle': 0,
     'reuse_oom_failures': 0, # Out Of Memory/CPU when trying to activate reused container
-    'bocked_no_path_level_3-3': 0, # No path between level 3 nodes
-    'bocked_no_path_level_3-2': 0, # No path between level 3 and level 2 nodes
-    'bocked_no_path_level_2-2': 0, # No path between level 2 nodes
-    'bocked_no_path_level_2-1': 0, # No path between level 2 and level 1 nodes
-    'bocked_no_path_level_1-1': 0, # No path between level 1 nodes
-    'bocked_no_path_level_1-0': 0, # No path between level 1 and level 0 nodes
-    'bocked_no_path_level_0-0': 0, # No path between level 0 nodes
+    'blocked_no_path_level_3-3': 0, # No path between level 3 nodes
+    'blocked_no_path_level_3-2': 0, # No path between level 3 and level 2 nodes
+    'blocked_no_path_level_2-2': 0, # No path between level 2 nodes
+    'blocked_no_path_level_2-1': 0, # No path between level 2 and level 1 nodes
+    'blocked_no_path_level_1-1': 0, # No path between level 1 nodes
+    'blocked_no_path_level_1-0': 0, # No path between level 1 and level 0 nodes
+    'blocked_no_path_level_0-0': 0, # No path between level 0 nodes
+}
+
+congested_paths = {
+    '3-3': 0,
+    '3-2': 0,
+    '2-2': 0,
+    '2-1': 0,
+    '1-1': 0,
+    '1-0': 0,
+    '0-0': 0,
+}
+
+accumulated_path_latency = {
+    '3-3': 0,
+    '3-2': 0,
+    '2-2': 0,
+    '2-1': 0,
+    '1-1': 0,
+    '1-0': 0,
+    '0-0': 0,
 }
 
 # App-specific statistics
@@ -149,6 +177,7 @@ for app_id in APPLICATIONS:
 #         'cpu_reserve': [],
 #         'ram_reserve': [],
 #     }
+
 # New dictionary to track latency metrics (in time units)
 latency_stats = {
     'total_latency': 0.0,
@@ -156,8 +185,11 @@ latency_stats = {
     'spawning_time': 0.0,
     'processing_time': 0.0,
     'waiting_time': 0.0,  # Track total waiting time
+    'network_time': 0.0,  # Track total network time
     'count': 0
 }
+
+
 
 # App-specific latency statistics
 app_latency_stats = {}
@@ -219,7 +251,13 @@ def generate_app_demands(app_id):
         "cpu_demand": app_config["min_req_cpu"],
         "ram_demand": app_config["min_req_ram"],
         "bandwidth_direct": app_config["bandwidth_direct"],
-        "bandwidth_indirect": app_config["bandwidth_indirect"]
+        "bandwidth_indirect": app_config["bandwidth_indirect"],
+        "packet_size_direct_upload": app_config["packet_size_direct_upload"],
+        "packet_size_direct_download": app_config["packet_size_direct_download"],
+        "packet_size_indirect_upload": app_config["packet_size_indirect_upload"],
+        "packet_size_indirect_download": app_config["packet_size_indirect_download"],
+        "data_path_required": app_config["data_path_required"],
+
     }
 
     return generated_resource

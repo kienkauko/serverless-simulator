@@ -2,7 +2,7 @@ import itertools
 import simpy 
 import random
 # from variables import CONTAINER_ASSIGN_RATE
-from variables import request_stats, app_stats, APPLICATIONS, VERBOSE
+import variables 
 
 class Container:
     """Represents a container instance spawned on a server."""
@@ -44,7 +44,7 @@ class Container:
         # Modify resources in the container
         delta_cpu = request.cpu_demand - self.cpu_alloc
         delta_ram = request.ram_demand - self.ram_alloc
-        if VERBOSE:
+        if variables.VERBOSE:
             print(f"{self.env.now:.2f} - {self} request asks for more resources (+CPU:{delta_cpu:.1f}, +RAM:{delta_ram:.1f})")
         
         # Use the server's resource lock to prevent race conditions - request the lock
@@ -63,7 +63,7 @@ class Container:
                 # self.current_request = None
                 exit(1)
             
-            if VERBOSE:
+            if variables.VERBOSE:
                 print(f"{self.env.now:.2f} - {self} allocated resources (CPU:{delta_cpu:.1f}, RAM:{delta_ram:.1f}) for {request} on {self.server}")
             
             # Release the lock after successful allocation
@@ -141,7 +141,7 @@ class Container:
 
     def release_resources(self):
         """Returns allocated CPU and RAM resources back to the server."""
-        if VERBOSE:
+        if variables.VERBOSE:
             print(f"{self.env.now:.2f} - {self} releasing resources (CPU:{self.cpu_alloc:.1f}, RAM:{self.ram_alloc:.1f}) from {self.server}")
         
         # Use the server's resource lock to prevent race conditions
@@ -189,37 +189,38 @@ class Container:
         self.state = "Active"
         # Update request state to "Running" when container is active
         self.current_request.state = "Running"
-        if VERBOSE:
+        if variables.VERBOSE:
             print(f"{self.env.now:.2f} - {self.current_request} state changed to Running")
 
         # Determine service rate based on app type
-        service_rate = APPLICATIONS[self.current_request.app_id]["service_rate"]
+        service_rate = variables.APPLICATIONS[self.current_request.app_id]["service_rate"]
             
-        service_time = random.expovariate(service_rate)
-        self.current_request.processing_time = service_time  # Track processing time for this request
-        if VERBOSE:
+        self.current_request.processing_time = random.expovariate(service_rate)*self.cluster.processing_time_factor
+        # self.current_request.processing_time = service_time  # Track processing time for this request
+        service_time = self.current_request.processing_time + self.current_request.network_delay
+        if variables.VERBOSE:
             print(f"{self.env.now:.2f} - {self.current_request} starting service in {self}. Expected duration: {service_time:.2f}")
         yield self.env.timeout(service_time)
-        if VERBOSE:
+        if variables.VERBOSE:
             print(f"{self.env.now:.2f} - {self.current_request} completed service time.")
 
     def idle_lifecycle(self):
         """Manages the idle timeout for a container."""
-        if VERBOSE:
+        if variables.VERBOSE:
             print(f"{self.env.now:.2f} - {self} is now idle. Starting idle timeout.")
         try:
             # Use the scheduler to calculate the idle timeout
             # scheduler = self.system.schedulers[self.cluster.name]
             # idle_timeout = scheduler.calculate_idle_timeout(self)
             
-            if VERBOSE:
+            if variables.VERBOSE:
                 print(f"{self.env.now:.2f} - Generated exponential idle timeout: {self.time_out:.2f}s for {self}")
             yield self.env.timeout(self.time_out)
             # If timeout completes without interruption, remove the container
-            if VERBOSE:
+            if variables.VERBOSE:
                 print(f"{self.env.now:.2f} - Idle timeout reached for {self}. Removing it.")
-            request_stats['containers_removed_idle'] += 1
-            app_stats[self.app_id]['containers_removed_idle'] += 1
+            variables.request_stats['containers_removed_idle'] += 1
+            variables.app_stats[self.app_id]['containers_removed_idle'] += 1
             
             self.state = "Dead"  # Mark as expired
 
@@ -240,6 +241,6 @@ class Container:
 
         except simpy.Interrupt:
             # Interrupted means it was reused before timeout!
-            if VERBOSE:
+            if variables.VERBOSE:
                 print(f"{self.env.now:.2f} - {self} reused before idle timeout. Interrupt received.")
             # No need to do anything here, the assign_request method handled the state change.

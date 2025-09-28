@@ -1,7 +1,7 @@
 import abc
 import random
 # from typing import Optional, List, Dict, Any
-from variables import request_stats, app_stats, VERBOSE
+import variables
 
 class Scheduler(abc.ABC):
     """
@@ -52,7 +52,7 @@ class Scheduler(abc.ABC):
         """
         pass
     
-    def spawn_container_for_request(self, request, system, cluster_name):
+    def spawn_container_for_request(self, request, system):
         """
         Attempt to spawn a new container for a request when no idle containers are available.
         
@@ -66,20 +66,20 @@ class Scheduler(abc.ABC):
             Server instance or None if no suitable server was found
         """
         # No idle container; spawn a new one using a server from the cluster.
-        if VERBOSE:
-            print(f"{self.env.now:.2f} - No idle container found for {request} in {cluster_name} cluster. Attempting to spawn.")
+        if variables.VERBOSE:
+            print(f"{self.env.now:.2f} - No idle container found for {request}. Attempting to spawn.")
         
         # Use the scheduler to find a server
         server = self.find_server_for_spawn(request)
         
         if server:
-            if VERBOSE:
-                print(f"{self.env.now:.2f} - Found potential {server} in {cluster_name} cluster for spawning container for {request}")
-            request_stats['container_spawns_initiated'] += 1
-            app_stats[request.app_id]['container_spawns_initiated'] += 1
+            if variables.VERBOSE:
+                print(f"{self.env.now:.2f} - Found potential {server} for spawning container for {request}")
+            variables.request_stats['container_spawns_initiated'] += 1
+            variables.app_stats[request.app_id]['container_spawns_initiated'] += 1
             
             # Start the spawn process (now passing cluster_name)
-            container = yield self.env.process(server.spawn_container_process(system, request, cluster_name))
+            container = yield self.env.process(server.spawn_container_process(system, request))
             container.time_out = self.calculate_idle_timeout(container)
             return True, container
         else:
