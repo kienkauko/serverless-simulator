@@ -103,7 +103,7 @@ class Topology:
         if variables.CLUSTER_STRATEGY != "centralized_cloud":
             print("Calculating nearby clusters for each node based on strategy: ", variables.CLUSTER_STRATEGY)
             if variables.CLUSTER_STRATEGY.startswith("massive_edge"):
-                self.edge_clusters = self.defined_edge_DCs(variables.EDGE_DC_LEVEL)
+                self.edge_clusters = self.defined_edge_DCs(variables.EDGE_DC_LEVEL, variables.EDGE_SERVER_PROVISION_STRATEGY)
                 self.clusters.update(self.edge_clusters)
             for node_id in [n for n, data in self.graph.nodes(data=True) if data.get('level') == 3]:
                 nearby_clusters = self.get_nearby(variables.CLUSTER_STRATEGY, node_id, variables.EDGE_DC_LEVEL)
@@ -673,28 +673,18 @@ class Topology:
         else:
             raise ValueError(f"Unknown cluster type for proximity search: {type}")
     
-    def defined_edge_DCs(self, level):
-        # Find all nodes with level=1
+    def equally(self, level):
+        """Provision servers equally among network nodes."""
         level_nodes = [node for node, data in self.graph.nodes(data=True) if data.get('level') == level]
         num_level_nodes = len(level_nodes)
-        
-        if num_level_nodes == 0:
-            print("Warning: No level 1 nodes found in the topology.")
-            return {}
-        
-        # Calculate servers per cluster (distribute evenly)
+
         servers_per_cluster = variables.EDGE_SERVER_NUMBER // num_level_nodes
         remaining_servers = variables.EDGE_SERVER_NUMBER % num_level_nodes
         
         edge_clusters = {}
-        
         for i, node_name in enumerate(level_nodes):
-            # Add extra server for some clusters if there are remaining servers
             num_servers = servers_per_cluster + (1 if i < remaining_servers else 0)
-            
             cluster_name = f"edge-{node_name}"
-            
-            # Create cluster configuration
             config = {
                 "node": node_name,
                 "num_servers": num_servers,
@@ -703,8 +693,61 @@ class Topology:
                 "power_max": 60,
                 "power_min": 10
             }
-
             edge_clusters[cluster_name] = Cluster(self.env, cluster_name, config)
+        
+        return edge_clusters
 
-        print(f"Defined {len(edge_clusters)} edge clusters at node level {level}.")
+    def population_weighted(self, level):
+        """Provision servers based on weighted population of network nodes."""
+        level_nodes_data = {node: data['population'] for node, data in self.graph.nodes(data=True) if data.get('level') == level}
+        total_population = sum(level_nodes_data.values())
+
+        # Calculate initial server distribution based on population weight
+        server_distribution = {node: (pop / total_population) * variables.EDGE_SERVER_NUMBER for node, pop in level_nodes_data.items()}
+        
+        # Allocate integer number of servers and track remainders
+        allocated_servers = {node: int(dist) for node, dist in server_distribution.items()}
+        remainders = {node: dist - int(dist) for node, dist in server_distribution.items()}
+        
+        # Distribute remaining servers based on largest remainders
+        num_allocated = sum(allocated_servers.values())
+        servers_to_distribute = variables.EDGE_SERVER_NUMBER - num_allocated
+        
+        # Sort nodes by remainder descending
+        sorted_nodes_by_remainder = sorted(remainders, key=remainders.get, reverse=True)
+        
+        for i in range(servers_to_distribute):
+            node_to_get_server = sorted_nodes_by_remainder[i]
+            allocated_servers[node_to_get_server] += 1
+            
+        edge_clusters = {}
+        for node_name, num_servers in allocated_servers.items():
+            if num_servers > 0:
+                cluster_name = f"edge-{node_name}"
+                config = {
+                    "node": node_name,
+                    "num_servers": num_servers,
+                    "server_cpu": 100.0,
+                    "server_ram": 100.0,
+                    "power_max": 60,
+                    "power_min": 10
+                }
+                edge_clusters[cluster_name] = Cluster(self.env, cluster_name, config)
+        
+        return edge_clusters
+
+    def defined_edge_DCs(self, level, strategy='equally'):
+        # Find all nodes with level=1
+        if strategy == 'equally':
+            edge_clusters = self.equally(level)
+        elif strategy == 'population_weighted':
+            edge_clusters = self.population_weighted(level)
+        else:
+            raise ValueError(f"Unknown edge DC provisioning strategy: {strategy}")
+
+        if not edge_clusters:
+            print(f"Warning: No level {level} nodes found to create edge clusters.")
+            return {}
+
+        print(f"Defined {len(edge_clusters)} edge clusters at node level {level} with '{strategy}' strategy.")
         return edge_clusters

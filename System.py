@@ -22,7 +22,7 @@ class System:
         # NOTE: later custom timeout per application per cluster can be implemented
         self.idle_timeout_cluster = {}
         for app_id in variables.APPLICATIONS:
-            self.idle_timeout_cluster[app_id] = 2
+            self.idle_timeout_cluster[app_id] = variables.UNIVERSAL_TIMEOUT
         # Initialize schedulers and idle container pools for each cluster
         self.schedulers = {}
         self.app_idle_containers = {}

@@ -1,7 +1,7 @@
 {
     "cloud-01": {
         "node": "12876",
-        "num_servers": 7000, 
+        "num_servers": 15000, 
         "server_cpu": 200.0,
         "server_ram": 200.0,
         "power_max": 150,

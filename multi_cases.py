@@ -5,6 +5,7 @@ import time
 import random
 import importlib
 import pandas as pd
+import multiprocessing
 
 # We need to be able to modify variables and re-run the simulation.
 # We will import the modules we need to modify/reset.
@@ -15,7 +16,7 @@ import Scheduler
 
 # --- Excel Setup ---
 output_dir = './figures'
-excel_file_path = os.path.join(output_dir, 'simulation_results.xlsx')
+excel_file_path = os.path.join(output_dir, 'simulation_results_population.xlsx')
 
 # Create the directory if it doesn't exist
 os.makedirs(output_dir, exist_ok=True)
@@ -76,10 +77,14 @@ def run_single_simulation(cluster_strategy, edge_server_number, traffic_intensit
     else:
         avg_total, avg_spawn, avg_proc, avg_wait = 0, 0, 0, 0
 
-    # Calculate mean power
+    # Calculate mean power, RAM, and CPU
     mean_power = 0
+    mean_ram = 0
+    mean_cpu = 0
     for cluster_name, cluster in topology.clusters.items():
         mean_power += cluster.get_mean_power('cluster')
+        mean_ram += cluster.get_mean_ram('cluster')
+        mean_cpu += cluster.get_mean_cpu('cluster')
 
     # Get a copy of the congested paths dictionary
     congested_paths_dict = variables.congested_paths.copy()
@@ -92,6 +97,8 @@ def run_single_simulation(cluster_strategy, edge_server_number, traffic_intensit
         'avg_processing_time': float(f"{avg_proc:.3f}"),
         'avg_network_time': float(f"{avg_wait:.3f}"),
         'mean_power': float(f"{mean_power:.1f}"),
+        'mean_ram': float(f"{mean_ram:.1f}"),
+        'mean_cpu': float(f"{mean_cpu:.1f}"),
         'congested_paths': congested_paths_dict
     }
     
@@ -105,85 +112,67 @@ def run_single_simulation(cluster_strategy, edge_server_number, traffic_intensit
 # --- Main Loop for Multiple Cases ---
 if __name__ == "__main__":
     cases = ["massive_edge_cloud", "massive_edge"]
-    # cases = ["centralized_cloud", "massive_edge_cloud", "massive_edge"]
+    # cases = ["centralized_cloud"]
 
-    # intensities = [i / 100000 for i in range(10, 150, 10)] # start=0.00005, stop=0.001, step=0.0001
-    intensities = [0.001, 0.0011, 0.0012, 0.0013, 0.0014] # start=0.00005, stop=0.001, step=0.0001
+    intensities = [i / 100000 for i in range(10, 210, 10)] # start=0.00005, stop=0.001, step=0.0001
+    # intensities = [0.001, 0.0011, 0.0012, 0.0013, 0.0014] # start=0.00005, stop=0.001, step=0.0001
 
+    # --- 1. Generate all simulation tasks ---
+    simulation_tasks = []
+    for case in cases:
+        if case.startswith("massive_edge"):
+            for num_server in [3000, 5000, 7000]:
+                for intensity in intensities:
+                    simulation_tasks.append((case, num_server, intensity))
+        else:  # For "centralized_cloud"
+            edge_server_number = 0
+            for intensity in intensities:
+                simulation_tasks.append((case, edge_server_number, intensity))
 
-    # Lists to store results for later conversion to DataFrame
+    # --- 2. Run simulations in parallel ---
+    num_processes = 4
+    print(f"\nStarting {len(simulation_tasks)} simulations on {num_processes} processes...")
+    
+    with multiprocessing.Pool(processes=num_processes) as pool:
+        # starmap runs the function with each tuple of arguments from the list
+        all_sim_results = pool.starmap(run_single_simulation, simulation_tasks)
+    
+    print("\nAll parallel simulations finished. Processing results...")
+
+    # --- 3. Process results after all simulations are done ---
     main_results_list = []
     congestion_results_list = []
 
-    for case in cases:
-        if case.startswith("massive_edge"):
-            for num_server in [5000]:
-                for intensity in intensities:
-                    # Run simulation
-                    sim_results = run_single_simulation(
-                        cluster_strategy=case,
-                        edge_server_number=num_server,
-                        traffic_intensity=intensity
-                    )
-                    
-                    # Append main results
-                    main_results_list.append({
-                        'cluster_strategy': case,
-                        'edge_server_number': num_server,
-                        'traffic_intensity': intensity,
-                        'blocking_percentage': sim_results['blocking_percentage'],
-                        'avg_offloaded_to_cloud': sim_results['avg_offloaded_to_cloud'],
-                        'avg_total_latency': sim_results['avg_total_latency'],
-                        'avg_spawn_time': sim_results['avg_spawn_time'],
-                        'avg_processing_time': sim_results['avg_processing_time'],
-                        'avg_network_time': sim_results['avg_network_time'],
-                        'mean_power': sim_results['mean_power']
-                    })
-                
-                    # Append congestion results
-                    congestion_row = {
-                        'cluster_strategy': case,
-                        'edge_server_number': num_server,
-                        'traffic_intensity': intensity
-                    }
-                    for key in congestion_keys:
-                        congestion_row[key] = sim_results['congested_paths'].get(key, 0)
-                    congestion_results_list.append(congestion_row)
+    for i, sim_results in enumerate(all_sim_results):
+        # Get the input parameters for this result
+        case, num_server, intensity = simulation_tasks[i]
 
-        else: # For "centralized_cloud"
-            # EDGE_SERVER_NUMBER is not relevant, can be set to a default like 0
-            edge_server_number = 0 
-            for intensity in intensities:
-                # Run simulation
-                sim_results = run_single_simulation(
-                    cluster_strategy=case,
-                    edge_server_number=edge_server_number,
-                    traffic_intensity=intensity
-                )
+        # Append main results
+        main_results_list.append({
+            'cluster_strategy': case,
+            'edge_server_number': num_server,
+            'traffic_intensity': intensity,
+            'blocking_percentage': sim_results['blocking_percentage'],
+            'avg_offloaded_to_cloud': sim_results['avg_offloaded_to_cloud'],
+            'avg_total_latency': sim_results['avg_total_latency'],
+            'avg_spawn_time': sim_results['avg_spawn_time'],
+            'avg_processing_time': sim_results['avg_processing_time'],
+            'avg_network_time': sim_results['avg_network_time'],
+            'mean_power': sim_results['mean_power'],
+            'mean_ram': sim_results['mean_ram'],
+            'mean_cpu': sim_results['mean_cpu']
+        })
+    
+        # Append congestion results
+        congestion_row = {
+            'cluster_strategy': case,
+            'edge_server_number': num_server,
+            'traffic_intensity': intensity
+        }
+        for key in congestion_keys:
+            congestion_row[key] = sim_results['congested_paths'].get(key, 0)
+        congestion_results_list.append(congestion_row)
 
-                # Append main results
-                main_results_list.append({
-                    'cluster_strategy': case,
-                    'edge_server_number': edge_server_number,
-                    'traffic_intensity': intensity,
-                    'blocking_percentage': sim_results['blocking_percentage'],
-                    'avg_offloaded_to_cloud': sim_results['avg_offloaded_to_cloud'],
-                    'avg_total_latency': sim_results['avg_total_latency'],
-                    'avg_spawn_time': sim_results['avg_spawn_time'],
-                    'avg_processing_time': sim_results['avg_processing_time'],
-                    'avg_network_time': sim_results['avg_network_time'],
-                    'mean_power': sim_results['mean_power']
-                })
-            
-                # Append congestion results
-                congestion_row = {
-                    'cluster_strategy': case,
-                    'edge_server_number': edge_server_number,
-                    'traffic_intensity': intensity
-                }
-                for key in congestion_keys:
-                    congestion_row[key] = sim_results['congested_paths'].get(key, 0)
-                congestion_results_list.append(congestion_row)
 
     # --- Save results to Excel file ---
     # Create DataFrames from the new simulation runs

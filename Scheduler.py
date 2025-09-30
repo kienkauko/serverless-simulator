@@ -80,7 +80,7 @@ class Scheduler(abc.ABC):
             
             # Start the spawn process (now passing cluster_name)
             container = yield self.env.process(server.spawn_container_process(system, request))
-            container.time_out = self.calculate_idle_timeout(container)
+            container.time_out = self.idle_timeout_cluster[container.app_id]
             return True, container
         else:
             return False, None

@@ -67,7 +67,7 @@ class Cluster:
             self.total_energy_usage_area += time_delta * current_power_usage
             self.last_resource_update = current_time
 
-    def get_mean_cpu(self, result_type, resource_type):
+    def get_mean_cpu(self, result_type, resource_type='usage'):
         """Calculate the mean CPU usage over time."""
         # Update statistics first to include latest data
         # self.update_resource_stats()
@@ -83,7 +83,7 @@ class Cluster:
             else:
                 return self.total_cpu_reserve_area / (self.env.now*self.total_cpu_capacity)
         
-    def get_mean_ram(self, result_type, resource_type):
+    def get_mean_ram(self, result_type, resource_type='usage'):
         """Calculate the mean RAM usage over time."""
         # Update statistics first to include latest data
         # self.update_resource_stats()
@@ -104,8 +104,8 @@ class Cluster:
         """Calculate the mean CPU usage over time."""
         # Update statistics first to include latest data
         # self.update_resource_stats()
-        if variables.CLUSTER_STRATEGY == "centralized_cloud":
-            print("WARNING: Current strategy is centralized cloud, power is not correct!")
+        # if variables.CLUSTER_STRATEGY == "centralized_cloud":
+        #     print("WARNING: Current strategy is centralized cloud, power is not correct!")
         if type == 'cluster':
             return self.total_energy_usage_area / (self.env.now)
         else:

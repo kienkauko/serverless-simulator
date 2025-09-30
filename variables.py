@@ -15,6 +15,7 @@ CENTRAL_CLOUD = "cloud-01"  # Central cloud node ID in the topology
 CENTRAL_CLOUD_NODE = "12876"  # Central cloud node ID in the topology
 EDGE_SERVER_NUMBER = 5000  # CPU capacity for all MECs
 EDGE_DC_LEVEL = 1
+EDGE_SERVER_PROVISION_STRATEGY = "population_weighted"  # Options: "equally", "population_weighted"
 CLOUD_SPAWN_TIME_FACTOR = 0.5  # Cloud spawn time multiplier (faster)
 CLOUD_PROCESSING_TIME_FACTOR = 0.6  # Cloud processing time multiplier (faster)
 # EDGE_RESOURCE_RAM = 100000.0   # RAM capacity for all MECs
@@ -100,6 +101,8 @@ APPLICATIONS = {
     #     "bandwidth_direct": 15.0,  # Bandwidth demand for this application
     # }
 }
+
+UNIVERSAL_TIMEOUT = 2  # Time to live for idle function - warm time
 
 # Statistics
 request_stats = {
