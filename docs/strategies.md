@@ -48,12 +48,18 @@ The strategy for determining which clusters are available to handle a request de
 - **`massive_edge`**: Requests routed only to the nearest edge DC based on network hierarchy
 - **`massive_edge_cloud`**: Requests can choose between nearest edge DC and cloud DC
 
-### 2.2 Proximity Calculation
+### 2.2 Request routing
 
-For strategies involving multiple cluster options, proximity is calculated using:
-- **Hierarchical path finding**: Utilizes network topology hierarchy for efficient routing
-- **Latency-based sorting**: Clusters sorted by total propagation delay to request origin
-- **Cached path computation**: Frequently used paths cached for performance
+Request routing between network nodes utilizes the `find_hierarchical_path()` function, which navigates the hierarchical topology structure by comparing node levels and routing accordingly. The function implements upward or downward path traversal through the network's tree-like architecture, as illustrated in the hierarchical network diagram below.
+
+![Hierarchical Network Structure](figures/hierachical-network.PNG)
+
+Typically, requests originate from level-3 nodes (Ingress points) and target higher-level nodes where datacenters are located. The routing algorithm operates as follows:
+
+1. **Level Comparison**: Compare the levels of source node A and destination node B
+2. **Upward Traversal**: If A's level differs from B's level, route A to its parent node
+3. **Iterative Process**: Continue comparing A's parent level with B's level
+4. **Convergence**: Repeat until reaching B's hierarchical level
 
 ## 3. Load Balancing Strategies
 

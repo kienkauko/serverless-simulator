@@ -110,7 +110,7 @@ Switch nodes have `level` attributes that indicate their hierarchical position. 
 
 The `parent` attribute indicates the gateway for traffic that needs to leave the local network. For example, traffic from a level-3 switch may need to traverse to its parent (a level-2 switch) to reach a distant destination. Traffic may need to go to lower level switches (bigger and core switches) to reach its destination.
 
-> To understand more about the topology and experiment with it, refer to the associated research paper and run the simulation scripts.
+> To understand more about the topology and experiment with it, refer to the associated research paper and run the simulation scripts in `/docs/topology_demo`.
 
 ## 4. Performance Optimization
 ### Caching
