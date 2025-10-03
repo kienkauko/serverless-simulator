@@ -16,7 +16,7 @@ import Scheduler
 
 # --- Excel Setup ---
 output_dir = './figures'
-excel_file_path = os.path.join(output_dir, 'simulation_results_population.xlsx')
+excel_file_path = os.path.join(output_dir, 'equally_2_live_time_level_2.xlsx')
 
 # Create the directory if it doesn't exist
 os.makedirs(output_dir, exist_ok=True)
@@ -121,7 +121,7 @@ if __name__ == "__main__":
     simulation_tasks = []
     for case in cases:
         if case.startswith("massive_edge"):
-            for num_server in [3000, 5000, 7000]:
+            for num_server in [5000]:
                 for intensity in intensities:
                     simulation_tasks.append((case, num_server, intensity))
         else:  # For "centralized_cloud"
