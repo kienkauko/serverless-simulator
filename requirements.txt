@@ -1,0 +1,17 @@
+# Core simulation framework
+simpy>=4.0.1
+
+# Data processing and analysis
+pandas>=1.5.0
+numpy>=1.24.0
+
+# Visualization and plotting
+matplotlib>=3.6.0
+folium>=0.14.0
+
+# Geospatial processing
+geopandas>=0.12.0
+pyproj>=3.4.0
+
+# Network analysis
+networkx>=2.8.0

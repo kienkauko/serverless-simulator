@@ -5,7 +5,7 @@
 
 Before using the simulator, ensure you understand:
 - **Serverless computing** fundamentals and concepts
-- **SimPy** discrete event simulation framework
+- (Optional) **Topology paper** and play around with **topology visualization** found in `/docs/topology_demo` folder. (Just read the paper briefly to understand the topology)
 
 ## Main File Functions
 
