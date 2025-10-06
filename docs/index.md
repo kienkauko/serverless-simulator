@@ -37,8 +37,6 @@ Starting from `main.py`, the simulation follows this sequence:
 6. **Complete** simulation when environment timeout reached
 7. **Output** tracked metrics and results
 
-> **Note:** Detailed request handling flow can be found in `request_handler.md`
-
 ## Documentation Index
 
 | Document | Description |
