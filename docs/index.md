@@ -5,7 +5,8 @@
 
 Before using the simulator, ensure you understand:
 - **Serverless computing** fundamentals and concepts
-- (Optional) **Topology paper** and play around with **topology visualization** found in `/docs/topology_demo` folder. (Just read the paper briefly to understand the topology)
+- **Simpy** event simulation
+- (Optional) **Topology paper** and play around with **topology visualization** found in [/docs/topology_demo](/docs/topology_demo) folder. (Just read the paper briefly to understand the topology)
 
 ## Main File Functions
 
@@ -14,7 +15,7 @@ Before using the simulator, ensure you understand:
 2. **`multi_cases.py`** - Extended version of main.py with loops to run multiple simulation scenarios and save results to Excel
 
 ### Core Components
-3. **`Topology.py`** - Creates network topology from input files, defines datacenter locations, resource capacity, and routing algorithms (see `topology.md` for details)
+3. **`Topology.py`** - Creates network topology from input files, defines datacenter locations, resource capacity, and routing algorithms (see [topology.md](topology.md) for details)
 4. **`System.py`** - Generates and manages requests by coordinating with other components
 5. **`Request.py`** - Request object containing all request information and properties
 6. **`LoadBalancer.py`** - Routes requests to appropriate clusters using defined strategies
