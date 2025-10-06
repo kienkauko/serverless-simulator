@@ -19,7 +19,7 @@ The simulator allows the following modifications:
 
 ## Documentation
 
-Please read documents in `/docs/index.md` before running.
+Please read documents in [/docs/index.md](/docs/index.md) before running.
 
 ## How to run
 
