@@ -35,6 +35,8 @@ for node_id in [n for n, data in self.graph.nodes(data=True) if data.get('level'
 
 ## 2. Cluster Discovery and Network Routing
 
+More info can be found in [strategies.md](strategies.md)
+
 ### Path to Cluster Discovery (`find_cluster()`)
 Since each request (originates from an Ingress node) has information about its nearby cluster. This function simply finds routes to the chosen clusters for request:
 - **Centralized Cloud**: Directly routes to the single central cloud node defined by `variables.CENTRAL_CLOUD`
@@ -52,7 +54,7 @@ This function is fundamental and is called whenever route between two nodes are 
   - Higher levels: Routes through common parent nodes, escalating to grandparents and great-grandparents as needed
 - **Cross-Level Routing**: Routes from higher-level node to its parent until reaching the target level, then connects to destination
 - **Path Caching**: Uses `path_cache` dictionary to store computed paths with keys `(src, dst)` for performance optimization
-- **Bandwidth Validation**: In reservation mode, checks available bandwidth; in PS mode, always allows path establishment
+- **Bandwidth Validation**: only works for reservation mode (deprecated, not used), checks available bandwidth; in PS mode, always allows path establishment
 - Returns success status, path, and failed link information grouped by network level
 
 ### Path Implementation and Latency Calculation
