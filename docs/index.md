@@ -49,3 +49,7 @@ Starting from `main.py`, the simulation follows this sequence:
 | **[container.md](container.md)** | Container lifecycle, resource allocation/deallocation, and state management (idle, active, dead) |
 | **[strategies.md](strategies.md)** | Comprehensive guide to all placement, routing, scheduling, and timeout strategies available in the simulator |
 
+## Last Notes  
+
+Function with (`deprecated`) means it is not used anymore, please ignore it.
+

@@ -2,13 +2,11 @@
 
 This document outlines the various strategies implemented in the serverless simulator for datacenter placement, request routing, resource allocation, and container lifecycle management. Each strategy addresses different aspects of the system and can be configured to study various deployment scenarios.
 
-## 1. Edge and Cloud Datacenter Placement Strategies
-
-*Configuration Location: `Topology.py` initialization and `variables.py`*
+## 1. Edge and Cloud Datacenter Placement Strategies (`Topology.py`)
 
 The simulator supports multiple strategies for placing datacenters within the network topology. These strategies determine both the number and location of datacenters.
 
-### 1.1 Cluster Strategy Types (variables.CLUSTER_STRATEGY)
+### 1.1 Cluster Strategy Types (modify with variables.CLUSTER_STRATEGY)
 
 - **`centralized_cloud`**: Single cloud datacenter handles all requests
 - **`distributed_cloud`**: Multiple cloud datacenters distributed across the topology  
@@ -28,27 +26,26 @@ The simulator supports multiple strategies for placing datacenters within the ne
 - If `EDGE_DC_LEVEL = 2`: Edge DCs placed at all layer-2 switches (typically ~200+ locations)
 - Each qualifying switch hosts exactly one edge DC
 
-### 1.3 Server Distribution Strategies (variables.EDGE_SERVER_PROVISION_STRATEGY)
+### 1.3 Server Distribution Strategies (modify with variables.EDGE_SERVER_PROVISION_STRATEGY)
 
 Two strategies distribute a fixed total number of edge servers (`variables.EDGE_SERVER_NUMBER`) across edge datacenters:
 
 - **`equally`**: Distributes servers evenly across all edge DCs, with remainder servers allocated to first few DCs
 - **`population_weighted`**: Distributes servers proportionally based on the population served by each network node, allowing for realistic resource allocation that matches demand density
 
-## 2. Request Routing and Cluster Selection Strategies
+## 2. Request Routing and Cluster Selection Strategies (`Topology.py`)
 
-*Configuration Location: `Topology.py` - `get_nearby()` function*
 
-### 2.1 Cluster Discovery Strategy
+### 2.1 Clustering Strategies
 
-The strategy for determining which clusters are available to handle a request depends on `variables.CLUSTER_STRATEGY`:
+The strategy for determining which clusters are available to handle a request depends on `variables.CLUSTER_STRATEGY`. The following clustering strategies are defined in the constructor of Topology.py.
 
 - **`centralized_cloud`**: All requests routed to the single cloud DC
-- **`distributed_cloud`**: Requests can be routed to multiple cloud DCs, sorted by network latency
+- **(deprecated) `distributed_cloud`**: Requests can be routed to multiple cloud DCs, sorted by network latency
 - **`massive_edge`**: Requests routed only to the nearest edge DC based on network hierarchy
 - **`massive_edge_cloud`**: Requests can choose between nearest edge DC and cloud DC
 
-### 2.2 Request routing
+### 2.2 Request routing (`Topology.py/find_hierarchical_path()`)
 
 Request routing between network nodes utilizes the `find_hierarchical_path()` function, which navigates the hierarchical topology structure by comparing node levels and routing accordingly. The function implements upward or downward path traversal through the network's tree-like architecture, as illustrated in the hierarchical network diagram below.
 
@@ -61,9 +58,8 @@ Typically, requests originate from level-3 nodes (Ingress points) and target hig
 3. **Iterative Process**: Continue comparing A's parent level with B's level
 4. **Convergence**: Repeat until reaching B's hierarchical level
 
-## 3. Load Balancing Strategies
+## 3. Load Balancing Strategies (`LoadBalancer.py`)
 
-*Configuration Location: `LoadBalancer.py`*
 
 ### 3.1 Cluster Selection Strategy (cluster_selection_strategy)
 
@@ -92,9 +88,7 @@ Currently implements **"random"** strategy:
 - **Application-aware**: Route based on application-specific requirements
 - **Cost-optimized**: Consider energy or monetary costs in routing decisions
 
-## 4. Container Scheduling Strategies
-
-*Configuration Location: `Scheduler.py`*
+## 4. Container Scheduling Strategies (`Scheduler.py`)
 
 ### 4.1 Available Scheduling Algorithms
 
@@ -123,9 +117,7 @@ system = System(env, topology, scheduler_class=scheduler_class)
 - **Affinity-based**: Co-locate related containers
 - **Anti-affinity**: Separate competing workloads
 
-## 5. Container Lifecycle and Idle Timeout Strategies
-
-*Configuration Location: `System.py` and `Scheduler.py`*
+## 5. Container Lifecycle and Idle Timeout Strategies (`Scheduler.py`, `System.py`)
 
 ### 5.1 Current Idle Timeout Strategy
 
@@ -155,9 +147,7 @@ system = System(env, topology, scheduler_class=scheduler_class)
 - **Cost-aware**: Balance container reuse against energy costs
 - **SLA-driven**: Optimize timeouts to meet performance requirements
 
-## 6. Network Model Strategies
-
-*Configuration Location: `Topology.py` initialization*
+## 6. Network Model Strategies (`Topology.py`)
 
 ### 6.1 Bandwidth Reservation Model
 - Reserves exact bandwidth for request duration

@@ -54,7 +54,7 @@ This function is fundamental and is called whenever route between two nodes are 
   - Higher levels: Routes through common parent nodes, escalating to grandparents and great-grandparents as needed
 - **Cross-Level Routing**: Routes from higher-level node to its parent until reaching the target level, then connects to destination
 - **Path Caching**: Uses `path_cache` dictionary to store computed paths with keys `(src, dst)` for performance optimization
-- **Bandwidth Validation**: only works for reservation mode (deprecated, not used), checks available bandwidth; in PS mode, always allows path establishment
+- **(deprecated) Bandwidth Validation**: only works for reservation mode, checks available bandwidth; in PS mode, always allows path establishment
 - Returns success status, path, and failed link information grouped by network level
 
 ### Path Implementation and Latency Calculation
