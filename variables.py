@@ -9,10 +9,12 @@ CONTAINER_ASSIGN_RATE = 1000000.0 # Average rate for request assignment (very fa
 
 # Topology configuration
 USE_TOPOLOGY = True  # Enable topology routing
+TOPOLOGY_PATH = "./topology/edge.json"
+# CLUSTER_PATH = "./topology/cluster.json"
 NETWORK_MODEL = "ps" # Options: "ps", "reservation"
 CLUSTER_STRATEGY = "centralized_cloud"  # Options: "massive_edge_cloud", "centralized_cloud", "distributed_cloud"
-CENTRAL_CLOUD = "cloud-01"  # Central cloud node ID in the topology
-CENTRAL_CLOUD_NODE = "12876"  # Central cloud node ID in the topology
+CENTRAL_CLOUD = "central_cloud"  # Central cloud name in the topology
+# CENTRAL_CLOUD_NODE = "12876"  # Central cloud node ID in the topology
 EDGE_SERVER_NUMBER = 5000  # CPU capacity for all MECs
 EDGE_DC_LEVEL = 2
 EDGE_SERVER_PROVISION_STRATEGY = "equally"  # Options: "equally", "population_weighted"
@@ -20,30 +22,9 @@ CLOUD_SPAWN_TIME_FACTOR = 0.5  # Cloud spawn time multiplier (faster)
 CLOUD_PROCESSING_TIME_FACTOR = 0.6  # Cloud processing time multiplier (faster)
 # EDGE_RESOURCE_RAM = 100000.0   # RAM capacity for all MECs
 # --- Multi-Cluster Configuration ---
-# Define the parameters for each cluster
-# CLUSTER_CONFIG = {
-#     "edge": {
-#         "node": "nodeA",
-#         "num_servers": 2,
-#         "server_cpu": 100.0,
-#         "server_ram": 100.0,
-#         "power_max": 25,
-#         "power_min": 5,
-#         "spawn_time_factor": 1.0  # Edge spawn time multiplier (slower)
-#     },
-#     "cloud": {
-#         "node": "12876",
-#         "num_servers": 200,
-#         "server_cpu": 200.0,
-#         "server_ram": 200.0,
-#         "power_max": 150,
-#         "power_min": 50,
-#         "spawn_time_factor": 0.5  # Cloud spawn time multiplier (faster)
-#     }
-# }
 
 # Traffic intensity factor to scale arrival rates based on node population
-TRAFFIC_INTENSITY = 0.0008  # Adjust this factor to scale overall traffic, default: 0.0001
+TRAFFIC_INTENSITY = 0.00006  # Adjust this factor to scale overall traffic, default: 0.0001
 NODE_INTENSITY = 10  # Percentage of level 3 nodes generating traffic (0-100)
 # Application definitions for heterogeneous workloads
 APPLICATIONS = {

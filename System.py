@@ -41,7 +41,7 @@ class System:
         # for cluster_name in self.clusters:
            
 
-    def request_generator(self, node_intensity):
+    def request_generator(self):
         """Generates requests for all defined applications."""
         # node_intensity is a percentage (0-100) that determines which level 3 nodes generate requests
         total_request = 0
@@ -49,7 +49,7 @@ class System:
             for node_id, node_data in self.topology.graph.nodes(data=True):
                 if node_data['level'] == 3:  # Only level 3 nodes can generate requests
                     # Only generate requests with node_intensity probability
-                    if random.random() * 100 < node_intensity:
+                    if random.random() * 100 < variables.NODE_INTENSITY:
                         arrival_rate = round(node_data['population'] * variables.TRAFFIC_INTENSITY)
                         total_request += arrival_rate
                         if arrival_rate > 0:

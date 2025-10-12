@@ -6,12 +6,13 @@ from Cluster import Cluster
 import variables
 
 class Topology:
-    def __init__(self, env, edge_path, cluster_info, network_model='reservation'):
+    def __init__(self, env):
         # self.clusters = clusters
         # Store edge cluster for easy access if provided
         # self.edge_cluster = [cluster for cluster_name, cluster in clusters.items() if cluster_name == "edge"] if clusters else []
-        print(f"Initializing topology with network model: {network_model}...")
-        self.network_model = network_model
+        self.network_model = variables.NETWORK_MODEL
+        self.bandwidth_factor = variables.TRAFFIC_INTENSITY # Scale following the traffic intensity
+        print(f"Initializing topology with network model: {self.network_model}, bandwidth factor: {self.bandwidth_factor}")
         # Initialize graph
         self.graph = nx.DiGraph()
         self.env = env
@@ -25,7 +26,7 @@ class Topology:
         self.edge_clusters = {}
 
         # Load edge data from JSON (includes both node and link data)
-        with open(edge_path, 'r') as f:
+        with open(variables.TOPOLOGY_PATH, 'r') as f:
             edge_data = json.load(f)
         
         # Process nodes from edge.json
@@ -60,8 +61,8 @@ class Topology:
                 latency = self.calculate_latency(n1_id, n2_id)
                 
                 # Get bandwidth from JSON or use default
-                # Current bandwidth is: 3: 10, 2: 40, 1: 100, 0: 400 Gbps
-                bandwidth = float(link.get('bandwidth', 1000000000.0))  # Default: 1 Gbps
+                # Current bandwidth is scaled by TRAFFIC_INTENSITY 
+                bandwidth = float(link.get('bandwidth'))*self.bandwidth_factor  
                 
                 # Get link level
                 node1_level = self.graph.nodes[n1_id]['level']
@@ -82,29 +83,26 @@ class Topology:
                                        latency=latency,
                                        level=combined_level)
 
-        # Load cluster information from JSON
-        with open(cluster_info, 'r') as f:
-            cluster_data = json.load(f)
-        for cluster_name, config in cluster_data.items():
-            # Create the cluster with its servers
-            if variables.CLUSTER_STRATEGY != "distributed_cloud":
-                cluster_name = variables.CENTRAL_CLOUD
-                self.clusters[cluster_name] = Cluster(self.env, cluster_name, config)
+        # Load predefined clusters information from JSON
+        for cluster in edge_data['clusters']:
+            cluster_name = cluster['name']
+            self.clusters[cluster_name] = Cluster(self.env, cluster)
+            if "cloud" in cluster_name:
                 self.cloud_clusters[cluster_name] = self.clusters[cluster_name]
-                break  # Only one cluster needed
+            elif "edge" in cluster_name:
+                self.edge_clusters[cluster_name] = self.clusters[cluster_name]
             else:
-                self.clusters[cluster_name] = Cluster(self.env, cluster_name, config)
-            # Store cloud clusters separately for later usage
-            # NOTE: these logics are not very useful in current implementation
-            if cluster_name.startswith("cloud"):
-                self.cloud_clusters[cluster_name] = self.clusters[cluster_name]
+                print(f"Warning: Unrecognized cluster type for {cluster_name}")
+            
 
-        # Initialize nearby clusters for each node
-        if variables.CLUSTER_STRATEGY != "centralized_cloud":
+        # Initialize edge DCs if strategy requires it
+        if "edge" in variables.CLUSTER_STRATEGY:
             print("Calculating nearby clusters for each node based on strategy: ", variables.CLUSTER_STRATEGY)
             if variables.CLUSTER_STRATEGY.startswith("massive_edge"):
                 self.edge_clusters = self.defined_edge_DCs(variables.EDGE_DC_LEVEL, variables.EDGE_SERVER_PROVISION_STRATEGY)
                 self.clusters.update(self.edge_clusters)
+            # As we assume requests come from layer-3 node, we need to define which clusters can
+            # these requests reach, they are called nearby clusters
             for node_id in [n for n, data in self.graph.nodes(data=True) if data.get('level') == 3]:
                 nearby_clusters = self.get_nearby(variables.CLUSTER_STRATEGY, node_id, variables.EDGE_DC_LEVEL)
                 self.graph.nodes[node_id]['nearby_clusters'] = nearby_clusters
@@ -633,22 +631,7 @@ class Topology:
         """Find and return a list of clusters sorted by proximity to the given node"""
         # Create a list to store clusters and their latencies
         sorted_clusters = []
-        if type == 'distributed_cloud':
-            clusters_with_latencies = []
-            # Check proximity to all cloud clusters
-            for cluster_name, cluster in self.cloud_clusters.items():                
-                path = self.get_cached_path(node, cluster.node)
-                if not path:
-                    path = self.find_hierachical_path(node, cluster.node)
-                if path:
-                    self.save_cached_path(node, cluster.node, path)
-                    total_latency = self.get_path_latency(path)
-                    clusters_with_latencies.append((cluster, total_latency))
-            
-            # Sort clusters by latency (proximity)
-            sorted_clusters = [c for c, _ in sorted(clusters_with_latencies, key=lambda x: x[1])]
-            return sorted_clusters
-        elif type.startswith('massive_edge'):
+        if type.startswith('massive_edge'):
             if level == 1:
                 parent = self.graph.nodes[self.graph.nodes[node]['parent']]['parent']
             elif level == 2:
@@ -686,6 +669,7 @@ class Topology:
             num_servers = servers_per_cluster + (1 if i < remaining_servers else 0)
             cluster_name = f"edge-{node_name}"
             config = {
+                "name": cluster_name,
                 "node": node_name,
                 "num_servers": num_servers,
                 "server_cpu": 100.0,
@@ -693,7 +677,7 @@ class Topology:
                 "power_max": 60,
                 "power_min": 10
             }
-            edge_clusters[cluster_name] = Cluster(self.env, cluster_name, config)
+            edge_clusters[cluster_name] = Cluster(self.env, config)
         
         return edge_clusters
 
@@ -725,6 +709,7 @@ class Topology:
             if num_servers > 0:
                 cluster_name = f"edge-{node_name}"
                 config = {
+                    "name": cluster_name,
                     "node": node_name,
                     "num_servers": num_servers,
                     "server_cpu": 100.0,
@@ -732,7 +717,7 @@ class Topology:
                     "power_max": 60,
                     "power_min": 10
                 }
-                edge_clusters[cluster_name] = Cluster(self.env, cluster_name, config)
+                edge_clusters[cluster_name] = Cluster(self.env, config)
         
         return edge_clusters
 

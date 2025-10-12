@@ -2,13 +2,9 @@ from Server import Server
 import variables 
 
 class Cluster:
-    def __init__(self, env, name, config=None):
-        self.name = name
+    def __init__(self, env, config=None):
         self.env = env           
-        # self.verbose = verbose  # Flag to control logging output
-        # if variables.CLUSTER_STRATEGY == "centralized_cloud":
-        #     self.servers = [Server(env, self, i, config)]
-        # else:            
+        self.name = config["name"]         
         self.servers = [Server(env, self, i, config) for i in range(config["num_servers"])]
         self.node = config["node"]  # Topology node where this cluster is located
         self.num_servers = len(self.servers)

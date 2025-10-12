@@ -71,9 +71,9 @@ env = simpy.Environment()
     # clusters[cluster_name] = Cluster(env, cluster_name, config, verbose=VERBOSE)
 
 # Create topology from a file (only used if USE_TOPOLOGY is True)
-topology_file = "./topology/edge.json"
-cluster_file = "./topology/cluster.json"
-topology = Topology(env, topology_file, cluster_file, NETWORK_MODEL)
+# topology_file = "./topology/edge.json"
+# cluster_file = "./topology/cluster.json"
+topology = Topology(env)
 
 # Select scheduler type - can be changed to BestFitScheduler for a different strategy
 scheduler_class = FirstFitScheduler
@@ -83,7 +83,7 @@ scheduler_class = FirstFitScheduler
 system = System(env, topology, scheduler_class=scheduler_class)
 
 # Call the request generator directly without wrapping in env.process()
-system.request_generator(NODE_INTENSITY)
+system.request_generator()
 
 env.process(track_progress(env, SIM_TIME))
 
