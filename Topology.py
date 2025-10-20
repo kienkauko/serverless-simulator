@@ -11,11 +11,21 @@ class Topology:
         # Store edge cluster for easy access if provided
         # self.edge_cluster = [cluster for cluster_name, cluster in clusters.items() if cluster_name == "edge"] if clusters else []
         self.network_model = variables.NETWORK_MODEL
+        self.bw_factor_enable = variables.BW_POPULATION_SCALE_ENABLE
         self.bandwidth_factor = variables.TRAFFIC_INTENSITY # Scale following the traffic intensity
-        print(f"Initializing topology with network model: {self.network_model}, bandwidth factor: {self.bandwidth_factor}")
+        self.link_util_enable = variables.LINK_UTILIZATION_ENABLE
+        self.link_utilization = variables.LINK_UTILIZATION
+
+        print(f"Initializing topology with network model: {self.network_model}, \
+               bandwidth factor enabled: {self.bw_factor_enable}, \
+                link utilization enabled: {self.link_util_enable}")
         # Initialize graph
         self.graph = nx.DiGraph()
         self.env = env
+
+        # Define Ingress nodes
+        self.ingress_nodes = []
+
         # Add a path cache
         self.path_cache = {}  # Format: (src, dst) -> path
         self.path_latency_cache = {}  # Format: (tuple(path)) -> latency
@@ -57,17 +67,24 @@ class Topology:
             #     pass
             # Check if both nodes exist in our graph
             if n1_id in self.graph.nodes and n2_id in self.graph.nodes:
-                # Calculate latency based on node locations
-                latency = self.calculate_latency(n1_id, n2_id)
-                
-                # Get bandwidth from JSON or use default
-                # Current bandwidth is scaled by TRAFFIC_INTENSITY 
-                bandwidth = float(link.get('bandwidth'))*self.bandwidth_factor  
-                
                 # Get link level
                 node1_level = self.graph.nodes[n1_id]['level']
                 node2_level = self.graph.nodes[n2_id]['level']
                 combined_level = f"{node1_level}-{node2_level}"
+
+                # Calculate latency based on node locations
+                latency = self.calculate_latency(n1_id, n2_id)
+                
+                # Get bandwidth from JSON or use default
+                # Current bandwidth is scaled by TRAFFIC_INTENSITY
+                if self.bw_factor_enable:
+                    bandwidth = float(link.get('bandwidth'))*self.bandwidth_factor 
+                else:
+                    bandwidth = float(link.get('bandwidth'))
+                # Apply link utilization if enabled
+                if self.link_util_enable:
+                    utilization = self.link_utilization[combined_level]
+                    bandwidth = bandwidth * (1 - utilization)
                 
                 # Add edge to the graph with attributes based on the network model
                 if self.network_model == 'reservation':
@@ -107,7 +124,34 @@ class Topology:
                 nearby_clusters = self.get_nearby(variables.CLUSTER_STRATEGY, node_id, variables.EDGE_DC_LEVEL)
                 self.graph.nodes[node_id]['nearby_clusters'] = nearby_clusters
 
+        # Define ingress nodes
+        self.define_ingress_nodes(mode=variables.INGRESS_MODE)
+
         print("Topology initialized.")
+    
+    def define_ingress_nodes(self, mode = 'country'):
+        """Define ingress nodes based on the specified mode."""
+        if mode == 'country':
+            # Define ingress nodes as all level 3 nodes
+            print("Defining ingress nodes as all level 3 nodes.")
+            self.ingress_nodes = [node for node, data in self.graph.nodes(data=True) if data.get('level') == 3]
+        elif mode == 'cities':
+            # Get list of cities (node 1) from variables
+            node_1_list = list(variables.EXAMINED_CITIES.values())
+            city_names = list(variables.EXAMINED_CITIES.keys())
+             # Find all level 3 nodes whose grandparents (layer 1) are in node_1_list
+            for node, data in self.graph.nodes(data=True):
+                if data.get('level') == 3:
+                    # Get grandparent (layer 1 node)
+                    grandparent = self.graph.nodes[data.get('parent')].get('parent')
+                    # Check if grandparent is in the examined cities list
+                    if grandparent in node_1_list:
+                        self.ingress_nodes.append(node)
+            print(f"Defined ingress nodes for: {city_names}")
+        print(f"Total ingress nodes defined: {len(self.ingress_nodes)}")
+
+
+
         
     def get_link_utilization(self):
         """Calculate and return average link utilization statistics grouped by level."""

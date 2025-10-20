@@ -12,19 +12,48 @@ USE_TOPOLOGY = True  # Enable topology routing
 TOPOLOGY_PATH = "./topology/edge.json"
 # CLUSTER_PATH = "./topology/cluster.json"
 NETWORK_MODEL = "ps" # Options: "ps", "reservation"
-CLUSTER_STRATEGY = "centralized_cloud"  # Options: "massive_edge_cloud", "centralized_cloud", "distributed_cloud"
+
+CLUSTER_STRATEGY = "massive_edge"  # Options: "massive_edge_cloud", "centralized_cloud", "distributed_cloud"
 CENTRAL_CLOUD = "central_cloud"  # Central cloud name in the topology
 # CENTRAL_CLOUD_NODE = "12876"  # Central cloud node ID in the topology
-EDGE_SERVER_NUMBER = 5000  # CPU capacity for all MECs
-EDGE_DC_LEVEL = 2
+EDGE_SERVER_NUMBER = 20000  # CPU capacity for all MECs
+EDGE_DC_LEVEL = 1
 EDGE_SERVER_PROVISION_STRATEGY = "equally"  # Options: "equally", "population_weighted"
 CLOUD_SPAWN_TIME_FACTOR = 0.5  # Cloud spawn time multiplier (faster)
 CLOUD_PROCESSING_TIME_FACTOR = 0.6  # Cloud processing time multiplier (faster)
-# EDGE_RESOURCE_RAM = 100000.0   # RAM capacity for all MECs
+
+# Define Ingress nodes for custom ingress defined in define_ingress_nodes() in Topology.py
+INGRESS_MODE = 'cities'  # Options: 'country', 'cities'
+EXAMINED_CITIES = {
+    'Frankfurt': '12860',
+    # 'Munich': 12838
+}
+
+# Define utilization for connected links
+BW_POPULATION_SCALE_ENABLE = False
+LINK_UTILIZATION_ENABLE = True  # Enable link utilization adjustments
+LINK_UTILIZATION = {
+    '3-3': 0.2,
+    '3-2': 0.2,
+    '2-3': 0.2,
+    '2-2': 0.2,
+    '2-1': 0.2,
+    '1-2': 0.2,
+    '1-1': 0.2,
+    '1-0': 0.2,
+    '0-1': 0.2,
+    '0-0': 0.2,
+} 
+
+
+
+
+
+
 # --- Multi-Cluster Configuration ---
 
 # Traffic intensity factor to scale arrival rates based on node population
-TRAFFIC_INTENSITY = 0.00006  # Adjust this factor to scale overall traffic, default: 0.0001
+TRAFFIC_INTENSITY = 0.001  # Adjust this factor to scale overall traffic, default: 0.0001
 NODE_INTENSITY = 10  # Percentage of level 3 nodes generating traffic (0-100)
 # Application definitions for heterogeneous workloads
 APPLICATIONS = {
@@ -98,14 +127,14 @@ request_stats = {
     'container_spawns_succeeded': 0,
     'containers_reused': 0,
     'containers_removed_idle': 0,
-    'reuse_oom_failures': 0, # Out Of Memory/CPU when trying to activate reused container
-    'blocked_no_path_level_3-3': 0, # No path between level 3 nodes
-    'blocked_no_path_level_3-2': 0, # No path between level 3 and level 2 nodes
-    'blocked_no_path_level_2-2': 0, # No path between level 2 nodes
-    'blocked_no_path_level_2-1': 0, # No path between level 2 and level 1 nodes
-    'blocked_no_path_level_1-1': 0, # No path between level 1 nodes
-    'blocked_no_path_level_1-0': 0, # No path between level 1 and level 0 nodes
-    'blocked_no_path_level_0-0': 0, # No path between level 0 nodes
+    'reuse_oom_failures': 0 # Out Of Memory/CPU when trying to activate reused container
+    # 'blocked_no_path_level_3-3': 0, # No path between level 3 nodes
+    # 'blocked_no_path_level_3-2': 0, # No path between level 3 and level 2 nodes
+    # 'blocked_no_path_level_2-2': 0, # No path between level 2 nodes
+    # 'blocked_no_path_level_2-1': 0, # No path between level 2 and level 1 nodes
+    # 'blocked_no_path_level_1-1': 0, # No path between level 1 nodes
+    # 'blocked_no_path_level_1-0': 0, # No path between level 1 and level 0 nodes
+    # 'blocked_no_path_level_0-0': 0, # No path between level 0 nodes
 }
 
 congested_paths = {
@@ -245,3 +274,42 @@ def generate_app_demands(app_id):
     }
 
     return generated_resource
+
+
+def log_result():
+    """
+    Calculate and return simulation metrics.
+    """
+    # Calculate blocking statistics
+    total_blocked = request_stats['blocked_no_server_capacity'] + request_stats['blocked_spawn_failed'] \
+                    + request_stats['blocked_no_path']
+    
+    block_perc = (total_blocked / request_stats['generated'] * 100) if request_stats['generated'] > 0 else 0
+    
+    # Calculate offloading percentage
+    avg_offloaded = (request_stats['offloaded_to_cloud'] * 100 / request_stats['processed']) if request_stats['processed'] > 0 else 0
+    
+    # Calculate latency metrics
+    if latency_stats['count'] > 0:
+        avg_total = latency_stats['total_latency'] / latency_stats['count']
+        avg_spawn = latency_stats['spawning_time'] / latency_stats['count']
+        avg_proc = latency_stats['processing_time'] / latency_stats['count']
+        avg_wait = latency_stats['network_time'] / latency_stats['count']
+    else:
+        avg_total, avg_spawn, avg_proc, avg_wait = 0, 0, 0, 0
+    
+    # Get a copy of the congested paths dictionary
+    congested_paths_dict = congested_paths.copy()
+    
+    # Prepare results dictionary
+    results = {
+        'blocking_percentage': float(f"{block_perc:.2f}"),
+        'avg_offloaded_to_cloud': float(f"{avg_offloaded:.2f}"),
+        'avg_total_latency': float(f"{avg_total:.3f}"),
+        'avg_spawn_time': float(f"{avg_spawn:.3f}"),
+        'avg_processing_time': float(f"{avg_proc:.3f}"),
+        'avg_network_time': float(f"{avg_wait:.3f}"),
+        'congested_paths': congested_paths_dict
+    }
+
+    return results

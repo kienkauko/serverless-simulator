@@ -62,20 +62,7 @@ def run_single_simulation(cluster_strategy, edge_server_number, traffic_intensit
     env.run(until=variables.SIM_TIME)
 
     # --- 3. Collect Results (adapted from main.py) ---
-    total_blocked = variables.request_stats['blocked_no_server_capacity'] + variables.request_stats['blocked_spawn_failed'] \
-                    + variables.request_stats['blocked_no_path']
-
-    block_perc = (total_blocked / variables.request_stats['generated'] * 100)
-    
-    avg_offloaded = (variables.request_stats['offloaded_to_cloud'] * 100 / variables.request_stats['processed']) 
-
-    if variables.latency_stats['count'] > 0:
-        avg_total = variables.latency_stats['total_latency'] / variables.latency_stats['count']
-        avg_spawn = variables.latency_stats['spawning_time'] / variables.latency_stats['count']
-        avg_proc  = variables.latency_stats['processing_time'] / variables.latency_stats['count']
-        avg_wait = variables.latency_stats['network_time'] / variables.latency_stats['count']
-    else:
-        avg_total, avg_spawn, avg_proc, avg_wait = 0, 0, 0, 0
+    results = variables.log_result()
 
     # Calculate mean power, RAM, and CPU
     mean_power = 0
@@ -86,21 +73,11 @@ def run_single_simulation(cluster_strategy, edge_server_number, traffic_intensit
         mean_ram += cluster.get_mean_ram('cluster')
         mean_cpu += cluster.get_mean_cpu('cluster')
 
-    # Get a copy of the congested paths dictionary
-    congested_paths_dict = variables.congested_paths.copy()
-
-    results = {
-        'blocking_percentage': float(f"{block_perc:.2f}"),
-        'avg_offloaded_to_cloud': float(f"{avg_offloaded:.2f}"),
-        'avg_total_latency': float(f"{avg_total:.3f}"),
-        'avg_spawn_time': float(f"{avg_spawn:.3f}"),
-        'avg_processing_time': float(f"{avg_proc:.3f}"),
-        'avg_network_time': float(f"{avg_wait:.3f}"),
-        'mean_power': float(f"{mean_power:.1f}"),
-        'mean_ram': float(f"{mean_ram:.1f}"),
-        'mean_cpu': float(f"{mean_cpu:.1f}"),
-        'congested_paths': congested_paths_dict
-    }
+    results.update({
+    'mean_power': float(f"{mean_power:.1f}"),
+    'mean_ram': float(f"{mean_ram:.1f}"),
+    'mean_cpu': float(f"{mean_cpu:.1f}")
+    })
     
     print(f"\n--- RESULTS FOR THIS RUN ---")
     for key, value in results.items():

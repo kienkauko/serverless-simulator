@@ -96,39 +96,26 @@ print("\n--- Overall Simulation Statistics ---")
 for key, value in request_stats.items():
     print(f"{key.replace('_', ' ').capitalize()}: {value}")
 
-total_blocked = request_stats['blocked_no_server_capacity'] + request_stats['blocked_spawn_failed'] \
-                + request_stats['blocked_no_path']
+# Use the log_result() function to get calculated metrics
+results = log_result()
 
-# total_ended = request_stats['processed'] + total_blocked
-# print(f"{'Total requests generated':<30}: {total_ended}")
 print(f"{'Total requests counted':<30}: {latency_stats['count']}")
 if request_stats['generated'] > 0:
-    block_perc = total_blocked / request_stats['generated'] * 100
-    print(f"{'Blocking percentage':<30}: {block_perc:.2f}%")
-    if block_perc > 0:
-        print(f"  {' - Due to computing':<28}: {request_stats['blocked_no_server_capacity'] / request_stats['generated'] * 100}")
-        print(f"  {' - Due to link':<28}: {request_stats['blocked_no_path'] / request_stats['generated'] * 100}")
+    print(f"{'Blocking percentage':<30}: {results['blocking_percentage']:.2f}%")
+    if results['blocking_percentage'] > 0:
+        print(f"  {' - Due to computing':<28}: {request_stats['blocked_no_server_capacity'] / request_stats['generated'] * 100:.2f}%")
+        print(f"  {' - Due to link':<28}: {request_stats['blocked_no_path'] / request_stats['generated'] * 100:.2f}%")
 
-avg_offloaded = request_stats['offloaded_to_cloud']*100/request_stats['processed']
-print(f"{'Average Offloaded to Cloud':<30}: {avg_offloaded:.2f}")
-request_stats['offloaded_to_cloud']
-# if request_stats['container_spawns_initiated'] > 0:
-#     spawn_fail_perc = request_stats['container_spawns_failed'] / request_stats['container_spawns_initiated'] * 100
-#     print(f"{'Spawn failure percentage':<30}: {spawn_fail_perc:.2f}%")
+print(f"{'Average Offloaded to Cloud':<30}: {results['avg_offloaded_to_cloud']:.2f}%")
 
-# Print average latency metrics if available
+# Print average latency metrics from results
 if latency_stats['count'] > 0:
-    avg_total = latency_stats['total_latency'] / latency_stats['count']
-    avg_prop = latency_stats['propagation_delay'] / latency_stats['count']
-    avg_spawn = latency_stats['spawning_time'] / latency_stats['count']
-    avg_proc  = latency_stats['processing_time'] / latency_stats['count']
-    avg_wait = latency_stats['network_time'] / latency_stats['count']
     print("\n--- Average Latencies in Second---")
-    print(f"{'Average Total Latency':<30}: {avg_total:.3f}")
-    print(f"{'Average Propagation Delay':<30}: {avg_prop:.3f}")
-    print(f"{'Average Spawn Time':<30}: {avg_spawn:.3f}")
-    print(f"{'Average Processing Time':<30}: {avg_proc:.3f}")
-    print(f"{'Average Network Time':<30}: {avg_wait:.3f}")
+    print(f"{'Average Total Latency':<30}: {results['avg_total_latency']:.3f}")
+    print(f"{'Average Propagation Delay':<30}: {latency_stats['propagation_delay'] / latency_stats['count']:.3f}")
+    print(f"{'Average Spawn Time':<30}: {results['avg_spawn_time']:.3f}")
+    print(f"{'Average Processing Time':<30}: {results['avg_processing_time']:.3f}")
+    print(f"{'Average Network Time':<30}: {results['avg_network_time']:.3f}")
 
 # Print application-specific statistics
 # print("\n--- Application-Specific Statistics ---")
@@ -208,10 +195,10 @@ if NETWORK_MODEL == "reservation":
         print(f"  Link {link:<6}: {percentage:.2f}%")
 else:
     print("Congestion path statistics:")
-    for path, count in congested_paths.items():
+    # Use congested_paths from results
+    for path, count in results['congested_paths'].items():
         print(f" Congested by path {path}: {count}")
     
     # print("\nAccumulated path latency (s):")
     # for path, total_delay in accumulated_path_latency.items():
     #     print(f" Contribution of Path {path:<6}: {total_delay * 100 / latency_stats['count']:.2f}%")
-    

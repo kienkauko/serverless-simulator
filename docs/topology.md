@@ -8,7 +8,7 @@ The topology is initialized through the `Topology` class constructor with the fo
 
 ### Graph Construction
 - Creates a directed graph using NetworkX to represent the network topology
-- Loads network nodes and links from JSON files (`edge_path` parameter)
+- Loads network nodes, links and predefined clusters from JSON files (`edge_path` parameter)
 - Each node contains attributes: location (EPSG:3857 coordinates), level (hierarchical level 0-3), population, and parent node
 - **Note:** Level 3 nodes are used as ingress nodes (where requests originate). Population data for level 3 nodes simulates user traffic patterns
 - Links between nodes include bandwidth capacity, latency (calculated using Haversine formula based on geographic distance), and level information
@@ -20,12 +20,10 @@ After switch nodes and edges (links between nodes) are created, datacenters (eit
 
 > *More details about datacenter placement can be found in [strategies.md](strategies.md)*
 
-- Loads cluster configurations from JSON file (`cluster_info` parameter)
-- Supports different cluster strategies via `variables.CLUSTER_STRATEGY`:
-  - `"centralized_cloud"`: Single central cloud cluster
-  - `"distributed_cloud"`: Multiple distributed cloud clusters (deprecated)
-  - `"massive_edge"` or `"massive_edge_cloud"`: Edge clusters at specified network levels
-- Assigns nearby clusters for ingress nodes (level 3 nodes), meaning requests from an ingress node can only be assigned to its nearby clusters:
+- Clusters, either edge or cloud, if are predefined in `edge.json`, are created first. 
+- Then, depends on different cluster strategies(`variables.CLUSTER_STRATEGY`), more clusters are created, such that:
+  - `"massive_edge"` or `"massive_edge_cloud"`: Edge clusters are created at specified network levels
+- Finally, assigns nearby clusters for ingress nodes (level 3 nodes), meaning requests from an ingress node can only be assigned to its nearby clusters:
 
 ```python
 for node_id in [n for n, data in self.graph.nodes(data=True) if data.get('level') == 3]:

@@ -38,7 +38,6 @@ Starting from `main.py`, the simulation follows this sequence:
 7. **Output** tracked metrics and results
 
 ## Documentation Index
-
 | Document | Description |
 |----------|-------------|
 | **[topology.md](topology.md)** | Network topology creation, datacenter placement, and routing algorithms between network nodes |
@@ -47,7 +46,8 @@ Starting from `main.py`, the simulation follows this sequence:
 | **[cluster_and_server.md](cluster_and_server.md)** | Datacenter clusters and individual server resource management and container spawning |
 | **[container.md](container.md)** | Container lifecycle, resource allocation/deallocation, and state management (idle, active, dead) |
 | **[strategies.md](strategies.md)** | Comprehensive guide to all placement, routing, scheduling, and timeout strategies available in the simulator |
-
+| **[update_log.md](update_log.md)** | Major changes and updates tracked through commit history |
+  
 ## Last Notes  
 
 Function with (`deprecated`) means it is not used anymore, please ignore it.

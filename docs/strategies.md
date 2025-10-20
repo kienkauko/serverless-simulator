@@ -9,7 +9,6 @@ The simulator supports multiple strategies for placing datacenters within the ne
 ### 1.1 Cluster Strategy Types (modify with variables.CLUSTER_STRATEGY)
 
 - **`centralized_cloud`**: Single cloud datacenter handles all requests
-- **`distributed_cloud`**: Multiple cloud datacenters distributed across the topology  
 - **`massive_edge`**: Only edge datacenters, no cloud infrastructure
 - **`massive_edge_cloud`**: Hybrid approach with both edge and cloud datacenters
 
@@ -41,7 +40,6 @@ Two strategies distribute a fixed total number of edge servers (`variables.EDGE_
 The strategy for determining which clusters are available to handle a request depends on `variables.CLUSTER_STRATEGY`. The following clustering strategies are defined in the constructor of Topology.py.
 
 - **`centralized_cloud`**: All requests routed to the single cloud DC
-- **(deprecated) `distributed_cloud`**: Requests can be routed to multiple cloud DCs, sorted by network latency
 - **`massive_edge`**: Requests routed only to the nearest edge DC based on network hierarchy
 - **`massive_edge_cloud`**: Requests can choose between nearest edge DC and cloud DC
 
