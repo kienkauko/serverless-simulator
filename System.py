@@ -92,33 +92,41 @@ class System:
         # Start measuring waiting time
         request.waiting_start_time = self.env.now
         
-        # paths = {}
-        # target_clusters = []
         # Find cluster (DC or Edge DC) where request can be processed
-        # Finding strategy is in variables.py -> CLUSTER_STRATEGY
         link_found, target_clusters, failed_links_map = self.topology.find_cluster(request)
 
         if not link_found:
             self.update_end_statistics(request, 'link_failed', failed_links_map)
             return
+        
         # Delegate request handling to the LoadBalancer with viable cluster options
         handle_request_process = self.load_balancer.handle_request(request, target_clusters)
         assignment_result, container, cluster = yield self.env.process(handle_request_process)
         
         # If assignment was successful, process the service
         if assignment_result:
-            # Start using topology paths
+            # Create the first transmission - upload data to container
             self.topology.make_paths(request, target_clusters[cluster])
-            self.topology.update_request_delay(request, target_clusters[cluster], type='upload')
+            yield self.env.process(self.topology.update_request_delay(request, \
+                                    target_clusters[cluster], type='upload'))
+            self.topology.remove_paths(request, target_clusters[cluster])
+
             # Start the service lifecycle 
             yield self.env.process(container.service_lifecycle())
-            self.topology.update_request_delay(request, target_clusters[cluster], type='download')
+
+            # Create the second transmission - download data from container
+            self.topology.make_paths(request, target_clusters[cluster])
+            yield self.env.process(self.topology.update_request_delay(request, \
+                                    target_clusters[cluster], type='download'))
+            self.topology.remove_paths(request, target_clusters[cluster])
+
             # Update statistics
             self.update_end_statistics(request, 'success')
+
             # Release request and resources
             request.state = "Finished"
             container.release_request() # this process also puts container to idle cycle
-            self.topology.remove_paths(request, target_clusters[cluster])
+
             # Put the container into the idle pool
             self.app_idle_containers[cluster.name][container.app_id].append(container)
 
@@ -126,13 +134,7 @@ class System:
             # print(f"{self.env.now:.2f} - Failed to assign request {request} to a container.")
             self.update_end_statistics(request, 'compute_failed')
 
-    # def add_idle_container(self, container, cluster_name):
-    #     """Adds a container to the idle store for a specific cluster."""
-    #     if VERBOSE:
-    #         print(f"{self.env.now:.2f} - Adding {container} to idle pool in {cluster_name} cluster.")
-    #     # Put container in the appropriate cluster's app idle pool
-    #     self.app_idle_containers[cluster_name][container.app_id].append(container)
-    
+
     def update_start_statistics(self, request):
         variables.request_stats['generated'] += 1
         # app_stats[request.app_id]['generated'] += 1

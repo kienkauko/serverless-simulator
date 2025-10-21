@@ -13,10 +13,10 @@ TOPOLOGY_PATH = "./topology/edge.json"
 # CLUSTER_PATH = "./topology/cluster.json"
 NETWORK_MODEL = "ps" # Options: "ps", "reservation"
 
-CLUSTER_STRATEGY = "massive_edge"  # Options: "massive_edge_cloud", "centralized_cloud", "distributed_cloud"
+CLUSTER_STRATEGY = "centralized_cloud"  # Options: "massive_edge_cloud", "centralized_cloud", "distributed_cloud"
 CENTRAL_CLOUD = "central_cloud"  # Central cloud name in the topology
 # CENTRAL_CLOUD_NODE = "12876"  # Central cloud node ID in the topology
-EDGE_SERVER_NUMBER = 20000  # CPU capacity for all MECs
+EDGE_SERVER_NUMBER = 40000  # CPU capacity for all MECs
 EDGE_DC_LEVEL = 1
 EDGE_SERVER_PROVISION_STRATEGY = "equally"  # Options: "equally", "population_weighted"
 CLOUD_SPAWN_TIME_FACTOR = 0.5  # Cloud spawn time multiplier (faster)
@@ -112,7 +112,7 @@ APPLICATIONS = {
     # }
 }
 
-UNIVERSAL_TIMEOUT = 2  # Time to live for idle function - warm time
+UNIVERSAL_TIMEOUT = 10  # Time to live for idle function - warm time
 
 # Statistics
 request_stats = {

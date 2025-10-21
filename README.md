@@ -19,7 +19,7 @@ The simulator allows the following modifications:
 
 ## Documentation
 
-Please read documents in [/docs/index.md](/docs/index.md) before running.
+Please read documents in [/docs/index.md](/docs/index.md) before running. Newest **UPDATE** about the simulator is found in [/docs/update_log.md](/docs/update_log.md).
 
 ## How to run
 

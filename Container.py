@@ -92,10 +92,6 @@ class Container:
         if not self.current_request:
             print("FATAL ERROR: Container Class: release_request called with no current request!")
             exit(1) # Nothing to release
-
-        # Use the server's resource lock to prevent race conditions
-        # lock_request = self.server.resource_lock.request()
-        # yield lock_request
         
         try:
             # Modify resources in the container
@@ -125,17 +121,11 @@ class Container:
         self.cpu_alloc = self.current_request.cpu_warm
         self.ram_alloc = self.current_request.ram_warm
 
-        # Release the lock after resource update
-        # self.server.resource_lock.release(lock_request)
-        # Clear the current request
-        # finished_request = self.current_request
-        # finished_request.end_service_time = self.env.now
-        # print(f"{self.env.now:.2f} - {finished_request} finished service in {self}. Duration: {finished_request.end_service_time - finished_request.start_service_time:.2f}")
-        # print(f"{self.env.now:.2f} - {finished_request} releasing resources (CPU:{delta_cpu:.1f}, RAM:{delta_ram:.1f}) from {self.server}")
         # Update the container's state
         self.state = "Idle"
         self.idle_since = self.env.now
         self.current_request = None
+        
         # Start the idle timeout process
         self.idle_timeout_process = self.env.process(self.idle_lifecycle())
 
@@ -169,10 +159,6 @@ class Container:
 
     def service_lifecycle(self):
         """Simulates the request processing time within a container."""
-        # if not self.current_request:
-        #     print(f"ERROR: {self.env.now:.2f} - service_lifecycle called for {self} with no request!")
-        #     return
-        
         # Calculate and record the waiting time
         if self.current_request.waiting_start_time != -1:
             self.current_request.waiting_time = self.env.now - self.current_request.waiting_start_time

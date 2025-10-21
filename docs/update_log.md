@@ -1,8 +1,29 @@
 # Update Log
 
+# #Updated 20/10/2025
+**Commit:** [TBD]()
+
+### Bug Fix
+
+- **Fixed network flow lifecycle management:** Previously, network connections between ingress nodes and containers were kept active for the entire request processing duration. This incorrectly maintained flow counts even after file uploads/downloads completed, causing inaccurate latency calculations. The updated implementation now establishes separate connections for each "upload" and "download" phase:
+  1. Establish connection
+  2. Transfer data and calculate latency
+  3. Wait for transmission time (simpy timeout)
+  4. Close connection and remove flow
+  
+  See changes in [`System.py`](../System.py) and [`Topology.update_request_delay()`](../Topology.py)
+
+### Changes
+
+- Refactored TCP delay calculation in [`Topology.update_request_delay()`](../Topology.py) to support phased connection management
+- Merged `make_paths()` and `implement_path()` into single function for improved code organization
+- Merged `remove_paths()` and `release_path()` into single function (matching above pattern)
+  
+
+
 ## Updated 20/10/2025
 
-**Commit:** [5e99154](https://github.com/kienkauko/serverless-simulator/commit/5e991544ed564846fc6403089e21b6c0776b670a#diff-2f85b188f74cf75b146c6806d50231d217aaf6f6064b246de59cd949836335f2)
+**Commit:** [dbc0bb4](https://github.com/kienkauko/serverless-simulator/commit/dbc0bb496f4df9e7ad0c96ac72a22b04a4de29b5)
 
 ### Changes
 
@@ -15,7 +36,7 @@
 
 ## Updated 10/10/2025
 
-**Commit:** [5e99154](https://github.com/kienkauko/serverless-simulator/commit/5e991544ed564846fc6403089e21b6c0776b670a#diff-2f85b188f74cf75b146c6806d50231d217aaf6f6064b246de59cd949836335f2)
+**Commit:** [5e99154](https://github.com/kienkauko/serverless-simulator/commit/5e991544ed564846fc6403089e21b6c0776b670a)
 
 ### Changes
 

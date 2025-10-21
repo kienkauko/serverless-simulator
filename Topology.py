@@ -385,28 +385,19 @@ class Topology:
     #                         for i in range(len(path)-1))
     #     return total_latency
     
-    def implement_path(self, path, bw):
-        """Reserve bandwidth along a path or increment flow count."""
-        if not path or len(path) < 2:
-            return
-            
-        for i in range(len(path)-1):
-            if self.network_model == 'reservation':
-                self.graph[path[i]][path[i+1]]['available_bandwidth'] -= bw
-            elif self.network_model == 'ps':
-                self.graph[path[i]][path[i+1]]['num_active_flows'] += 1
+    # def implement_path(self, path):
+    #     """Reserve bandwidth along a path or increment flow count."""
+    #     if not path or len(path) < 2:
+    #         return
+    #     for i in range(len(path)-1):
+    #         self.graph[path[i]][path[i+1]]['num_active_flows'] += 1
 
-    def release_path(self, path, bw):
-        """Release bandwidth along a path or decrement flow count."""
-        if not path or len(path) < 2:
-            return
-            
-        for i in range(len(path)-1):
-            if self.network_model == 'reservation':
-                if bw is not None:
-                    self.graph[path[i]][path[i+1]]['available_bandwidth'] += bw
-            elif self.network_model == 'ps':
-                self.graph[path[i]][path[i+1]]['num_active_flows'] -= 1
+    # def release_path(self, path):
+    #     """Release bandwidth along a path or decrement flow count."""
+    #     if not path or len(path) < 2:
+    #         return
+    #     for i in range(len(path)-1):
+    #         self.graph[path[i]][path[i+1]]['num_active_flows'] -= 1
     
     def get_path_transmission_delay(self, path, packet_size):
         """
@@ -420,7 +411,7 @@ class Topology:
         
         bottleneck_bandwidth = float('inf')
         bottleneck_level = None
-        delay_by_level = {} # This will represent the delay contribution if this level were the bottleneck
+        # delay_by_level = {} # This will represent the delay contribution if this level were the bottleneck
 
         # First, find the bottleneck bandwidth for the new flow along the path
         for i in range(len(path) - 1):
@@ -467,67 +458,67 @@ class Topology:
         else:
             raise ValueError(f"Unknown delay type: {type}")
         
-        # NOTE: current reservation is behind updates -> it's wrong
-        if self.network_model == 'reservation':
-            prop_delay = 0
-            if request.data_path_required:
-                prop_delay = self.get_path_latency(path_direct) + self.get_path_latency(path_indirect) * 2  # Round trip
+        # Static propagation delay
+        prop_delay = self.get_path_latency(path_direct)
+        
+        # Add TCP overhead ONCE per request (not per transmission)
+        rtt = 2 * prop_delay / 1000  # Convert ms to seconds
+        # Connection setup (3-way handshake) + teardown (simplified to 1 RTT)
+        tcp_connection_overhead = 2 * rtt
+        num_rtts_slow_start = math.log2(packet_size_direct / (1460*8))
+        slow_start_delay = num_rtts_slow_start * rtt
+    
+        # Dynamic transmission delay and returns bottleneck info
+        trans_delay_direct, bottleneck_direct = self.get_path_transmission_delay(path_direct, packet_size_direct)
+        trans_delay_indirect, bottleneck_indirect = 0, None
+
+        if request.data_path_required:
+            prop_delay += self.get_path_latency(path_indirect)
+            trans_delay_indirect, bottleneck_indirect = self.get_path_transmission_delay(path_indirect, packet_size_indirect)
+
+        request.prop_delay += (prop_delay / 1000) # Convert ms to seconds
+        
+        # Store bottleneck info on the request
+        max_trans_delay = max(trans_delay_direct, trans_delay_indirect)
+        if max_trans_delay > request.max_trans_delay:
+            request.max_trans_delay = max_trans_delay
+            if max_trans_delay ==  trans_delay_direct:
+                request.bottleneck = bottleneck_direct
             else:
-                prop_delay = self.get_path_latency(path_direct) * 2
-            # Set delays variables
-            request.prop_delay += prop_delay / 1000  # Convert ms to seconds
-            request.network_delay += request.prop_delay  
+                request.bottleneck = bottleneck_indirect
 
-        else:   # PS model
-            # Static propagation delay
-            prop_delay = self.get_path_latency(path_direct)
-            # Dynamic transmission delay and returns bottleneck info
-            trans_delay_direct, bottleneck_direct = self.get_path_transmission_delay(path_direct, packet_size_direct)
-            trans_delay_indirect, bottleneck_indirect = 0, None
+        # Calculate total delay for this transmission and yield timeout
+        trans_delay = prop_delay / 1000 + tcp_connection_overhead + slow_start_delay \
+                     + trans_delay_direct + trans_delay_indirect
+        yield self.env.timeout(trans_delay)
 
-            if request.data_path_required:
-                prop_delay += self.get_path_latency(path_indirect)
-                trans_delay_indirect, bottleneck_indirect = self.get_path_transmission_delay(path_indirect, packet_size_indirect)
-
-            request.prop_delay += prop_delay / 1000  # Convert ms to seconds
-            
-            # Store bottleneck info on the request
-            max_trans_delay = max(trans_delay_direct, trans_delay_indirect)
-            if max_trans_delay > request.max_trans_delay:
-                request.max_trans_delay = max_trans_delay
-                if max_trans_delay ==  trans_delay_direct:
-                    request.bottleneck = bottleneck_direct
-                else:
-                    request.bottleneck = bottleneck_indirect
-            # request.delay_by_level_direct = delay_by_level_direct
-            # request.delay_by_level_indirect = delay_by_level_indirect
-
-            # Total network delay
-            request.network_delay += (request.prop_delay + trans_delay_direct + trans_delay_indirect)
+        # Accumulate delay and save to request log 
+        request.network_delay += trans_delay
 
     def make_paths(self, request, paths):
-        """Implement bandwidth reservation or flow counting for the given paths."""
-        if self.network_model == 'reservation':
-            self.implement_path(paths[0], request.bandwidth_direct)
-            if request.data_path_required:
-                self.implement_path(paths[1], request.bandwidth_indirect)
-        elif self.network_model == 'ps':
-            self.implement_path(paths[0], None)
-            if request.data_path_required:
-                self.implement_path(paths[1], None)
-
+        """Implement flow counting for the given paths."""
+        # Implement the direct path
+        if paths[0] and len(paths[0]) >= 2:
+            for i in range(len(paths[0])-1):
+                self.graph[paths[0][i]][paths[0][i+1]]['num_active_flows'] += 1
+        
+        # Implement the indirect path if needed
+        if request.data_path_required and paths[1] and len(paths[1]) >= 2:
+            for i in range(len(paths[1])-1):
+                self.graph[paths[1][i]][paths[1][i+1]]['num_active_flows'] += 1
 
     def remove_paths(self, request, paths):
-        """Release bandwidth for paths"""
-        if self.network_model == 'reservation':
-            self.release_path(paths[0], request.bandwidth_direct)
-            if request.data_path_required:
-                self.release_path(paths[1], request.bandwidth_indirect)
-        elif self.network_model == 'ps':
-            self.release_path(paths[0], None)
-            if request.data_path_required:
-                self.release_path(paths[1], None)
-    
+        """Release flow for paths"""
+        # Release the direct path
+        if paths[0] and len(paths[0]) >= 2:
+            for i in range(len(paths[0])-1):
+                self.graph[paths[0][i]][paths[0][i+1]]['num_active_flows'] -= 1
+        
+        # Release the indirect path if needed
+        if request.data_path_required and paths[1] and len(paths[1]) >= 2:
+            for i in range(len(paths[1])-1):
+                self.graph[paths[1][i]][paths[1][i+1]]['num_active_flows'] -= 1
+
     def find_cluster(self, request):
         """Find appropriate clusters for request processing
            Returns: ( dict(cluster -> [path_direct, path_indirect]),
