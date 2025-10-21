@@ -1,7 +1,7 @@
 # Update Log
 
-# #Updated 20/10/2025
-**Commit:** [TBD]()
+### Updated 21/10/2025
+**Commit:** [31f1d3e](https://github.com/kienkauko/serverless-simulator/commit/31f1d3ed2870d3a310b969e42020a6360d713638)
 
 ### Bug Fix
 
