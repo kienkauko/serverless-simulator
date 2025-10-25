@@ -16,9 +16,9 @@ class Topology:
         self.link_util_enable = variables.LINK_UTILIZATION_ENABLE
         self.link_utilization = variables.LINK_UTILIZATION
 
-        print(f"Initializing topology with network model: {self.network_model}, \
-               bandwidth factor enabled: {self.bw_factor_enable}, \
-                link utilization enabled: {self.link_util_enable}")
+        print(f"Initializing topology with network model: {self.network_model}, "
+              f"bandwidth factor enabled: {self.bw_factor_enable}, "
+              f"link utilization enabled: {self.link_util_enable}")
         # Initialize graph
         self.graph = nx.DiGraph()
         self.env = env
@@ -127,13 +127,12 @@ class Topology:
         # Define ingress nodes
         self.define_ingress_nodes(mode=variables.INGRESS_MODE)
 
-        print("Topology initialized.")
     
     def define_ingress_nodes(self, mode = 'country'):
         """Define ingress nodes based on the specified mode."""
         if mode == 'country':
             # Define ingress nodes as all level 3 nodes
-            print("Defining ingress nodes as all level 3 nodes.")
+            print("Defined ingress nodes for: country.")
             self.ingress_nodes = [node for node, data in self.graph.nodes(data=True) if data.get('level') == 3]
         elif mode == 'cities':
             # Get list of cities (node 1) from variables
@@ -465,7 +464,8 @@ class Topology:
         rtt = 2 * prop_delay / 1000  # Convert ms to seconds
         # Connection setup (3-way handshake) + teardown (simplified to 1 RTT)
         tcp_connection_overhead = 2 * rtt
-        num_rtts_slow_start = math.log2(packet_size_direct / (1460*8))
+        IW_bits = 10 * 1460 * 8  # 1 MSS = 1460 bytes = 11680 bits
+        num_rtts_slow_start = math.ceil(math.log2(packet_size_direct / IW_bits + 1))
         slow_start_delay = num_rtts_slow_start * rtt
     
         # Dynamic transmission delay and returns bottleneck info

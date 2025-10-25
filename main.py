@@ -24,7 +24,7 @@ def track_progress(env, total_time):
             elapsed_since_last = current_real_time - last_real_time
             elapsed_total = current_real_time - start_time
             
-            print(f"Simulation progress: {current_percentage}% complete - Real time: {elapsed_since_last:.2f}s for this 10%, {elapsed_total:.2f}s total")
+            print(f"Progress: {current_percentage}% complete - It takes {elapsed_since_last:.2f}s, {elapsed_total:.2f}s total")
             
             last_percentage = current_percentage
             last_real_time = current_real_time

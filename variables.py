@@ -2,6 +2,7 @@ import random
 # --- Configuration ---
 RANDOM_SEED = 42
 SIM_TIME = 500  # Simulation time units (e.g., seconds)
+METRIC_RECORDED_TIME = 0  # Time after which metrics are recorded
 VERBOSE = False  # Set to True to enable detailed logging
 
 # Container Parameters
@@ -23,7 +24,7 @@ CLOUD_SPAWN_TIME_FACTOR = 0.5  # Cloud spawn time multiplier (faster)
 CLOUD_PROCESSING_TIME_FACTOR = 0.6  # Cloud processing time multiplier (faster)
 
 # Define Ingress nodes for custom ingress defined in define_ingress_nodes() in Topology.py
-INGRESS_MODE = 'cities'  # Options: 'country', 'cities'
+INGRESS_MODE = 'country'  # Options: 'country', 'cities'
 EXAMINED_CITIES = {
     'Frankfurt': '12860',
     # 'Munich': 12838
@@ -33,16 +34,16 @@ EXAMINED_CITIES = {
 BW_POPULATION_SCALE_ENABLE = False
 LINK_UTILIZATION_ENABLE = True  # Enable link utilization adjustments
 LINK_UTILIZATION = {
-    '3-3': 0.2,
-    '3-2': 0.2,
-    '2-3': 0.2,
-    '2-2': 0.2,
-    '2-1': 0.2,
-    '1-2': 0.2,
-    '1-1': 0.2,
-    '1-0': 0.2,
-    '0-1': 0.2,
-    '0-0': 0.2,
+    '3-3': 0.5,
+    '3-2': 0.5,
+    '2-3': 0.5,
+    '2-2': 0.5,
+    '2-1': 0.5,
+    '1-2': 0.5,
+    '1-1': 0.5,
+    '1-0': 0.5,
+    '0-1': 0.5,
+    '0-0': 0.5,
 } 
 
 
@@ -53,7 +54,7 @@ LINK_UTILIZATION = {
 # --- Multi-Cluster Configuration ---
 
 # Traffic intensity factor to scale arrival rates based on node population
-TRAFFIC_INTENSITY = 0.001  # Adjust this factor to scale overall traffic, default: 0.0001
+TRAFFIC_INTENSITY = 0.0003  # Adjust this factor to scale overall traffic, default: 0.0001
 NODE_INTENSITY = 10  # Percentage of level 3 nodes generating traffic (0-100)
 # Application definitions for heterogeneous workloads
 APPLICATIONS = {
@@ -72,7 +73,7 @@ APPLICATIONS = {
         "bandwidth_direct": 40000000,  # Bandwidth demand for this application: bit per second
         "bandwidth_indirect": 1000000,  # Bandwidth demand for this application: bit per second
         "data_location": "12876",  # Location of data for this application - Cloud node
-        "packet_size_direct_upload": 83886080,  # in bits, default to 10 MB
+        "packet_size_direct_upload": 163886080,  # in bits, default to 10 MB
         "packet_size_direct_download": 81920,  # in bits, default to 10 KB
         "data_path_required": False,  # Whether data path is required
         "packet_size_indirect_upload": 0,  # in bits, default to 10 MB
@@ -112,7 +113,7 @@ APPLICATIONS = {
     # }
 }
 
-UNIVERSAL_TIMEOUT = 10  # Time to live for idle function - warm time
+UNIVERSAL_TIMEOUT = 2  # Time to live for idle function - warm time
 
 # Statistics
 request_stats = {
@@ -156,6 +157,9 @@ accumulated_path_latency = {
     '1-0': 0,
     '0-0': 0,
 }
+
+SAVE_INDIVIDUAL_LATENCIES = False  # Set to True to save individual request latencies
+accepted_request_latencies = []  # Will store tuples of (ingress_id, latency)
 
 # App-specific statistics
 app_stats = {}
@@ -276,7 +280,7 @@ def generate_app_demands(app_id):
     return generated_resource
 
 
-def log_result():
+def log_ave_result():
     """
     Calculate and return simulation metrics.
     """
@@ -285,7 +289,7 @@ def log_result():
                     + request_stats['blocked_no_path']
     
     block_perc = (total_blocked / request_stats['generated'] * 100) if request_stats['generated'] > 0 else 0
-    
+    accepted_req = request_stats['generated'] - total_blocked
     # Calculate offloading percentage
     avg_offloaded = (request_stats['offloaded_to_cloud'] * 100 / request_stats['processed']) if request_stats['processed'] > 0 else 0
     
@@ -304,6 +308,7 @@ def log_result():
     # Prepare results dictionary
     results = {
         'blocking_percentage': float(f"{block_perc:.2f}"),
+        'accepted_requests': accepted_req,
         'avg_offloaded_to_cloud': float(f"{avg_offloaded:.2f}"),
         'avg_total_latency': float(f"{avg_total:.3f}"),
         'avg_spawn_time': float(f"{avg_spawn:.3f}"),

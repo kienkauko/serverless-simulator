@@ -1,0 +1,71 @@
+Country:
+DT Pop. Threshold:
+Layers:
+4
+Layer Parameters (L0 = Core)
+Nodes L0:
+Conn L0:
+Cap L0:
+Redun. L0:
+Nodes L1:
+Conn L1:
+Cap L1:
+Redun. L1:
+Nodes L2:
+Conn L2:
+Cap L2:
+Redun. L2:
+Nodes L3:
+Conn L3:
+Cap L3:
+Redun. L3:
+Save Options
+​
+Save to JSON
+​
+Save to GPKG
+​
+Save to HTML
+​
+Force Recalculation
+✅ Config generated
+
+
+⚠️ Outputs already exist. Skipping calculation.
+
+{
+    "country": "AUS",
+    "DT_max_capacity": 10000,
+    "num_layers": 4,
+    "num_lower_layer_nodes": [
+        5,
+        50,
+        400
+    ],
+    "connection": [
+        "full",
+        "star",
+        "ring",
+        "ring"
+    ],
+    "link_capacity": [
+        400000000000.0,
+        100000000000.0,
+        10000000000.0,
+        1000000000.0
+    ],
+    "redundancy": [
+        1,
+        1,
+        1,
+        1
+    ],
+    "augmentation": null,
+    "save_to_json": true,
+    "save_to_gpkg": true,
+    "save_to_html": true,
+    "df_output": "results/AUS_4L_33458ac5/df.gpkg",
+    "json_output": "results/AUS_4L_33458ac5/result.json",
+    "folium_output": "results/AUS_4L_33458ac5/result_folium_map.html"
+}
+

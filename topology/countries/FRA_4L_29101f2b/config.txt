@@ -1,0 +1,34 @@
+{
+    "country": "FRA",
+    "DT_max_capacity": 10000,
+    "num_layers": 4,
+    "num_lower_layer_nodes": [
+        5,
+        50,
+        400
+    ],
+    "connection": [
+        "full",
+        "star",
+        "ring",
+        "ring"
+    ],
+    "link_capacity": [
+        400000000000.0,
+        100000000000.0,
+        10000000000.0,
+        1000000000.0
+    ],
+    "redundancy": [
+        1,
+        1,
+        1,
+        1
+    ],
+    "augmentation": null,
+    "save_to_json": true,
+    "save_to_gpkg": true,
+    "save_to_html": true,
+    "df_output": "results/FRA_4L_29101f2b/df.gpkg",
+    "json_output": "results/FRA_4L_29101f2b/result.json",
+    "folium_output": "results/FRA_4L_29101f2b/result_folium_map.html"

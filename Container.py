@@ -33,7 +33,7 @@ class Container:
         app_info = f" [App: {self.app_id}]" if self.app_id else ""
         return f"Cont_{self.id}(on Srv_{self.server.id}, State: {state}){app_info}"
 
-    def scale_for_request(self):
+    def scale_up_resource(self):
         """Scales container resources for the current request."""
         if not self.current_request:
             print(f"ERROR: {self.env.now:.2f} - scale_for_request called for {self} with no request!")
@@ -87,7 +87,7 @@ class Container:
             self.current_request = None
             return False
 
-    def release_request(self):
+    def scale_down_resource(self):
         """Releases the finished request and marks the container as idle."""
         if not self.current_request:
             print("FATAL ERROR: Container Class: release_request called with no current request!")
@@ -121,15 +121,7 @@ class Container:
         self.cpu_alloc = self.current_request.cpu_warm
         self.ram_alloc = self.current_request.ram_warm
 
-        # Update the container's state
-        self.state = "Idle"
-        self.idle_since = self.env.now
-        self.current_request = None
-        
-        # Start the idle timeout process
-        self.idle_timeout_process = self.env.process(self.idle_lifecycle())
-
-    def release_resources(self):
+    def remove_container(self):
         """Returns allocated CPU and RAM resources back to the server."""
         if variables.VERBOSE:
             print(f"{self.env.now:.2f} - {self} releasing resources (CPU:{self.cpu_alloc:.1f}, RAM:{self.ram_alloc:.1f}) from {self.server}")
@@ -157,7 +149,7 @@ class Container:
         # self.server.resource_lock.release(lock_request)
 
 
-    def service_lifecycle(self):
+    def process_request(self):
         """Simulates the request processing time within a container."""
         # Calculate and record the waiting time
         if self.current_request.waiting_start_time != -1:
@@ -165,7 +157,7 @@ class Container:
             # print(f"{self.env.now:.2f} - {self.current_request} waited for {self.current_request.waiting_time:.2f} time units")
         
         # First, have the container scale its resources for the request
-        scaling_result = self.scale_for_request()
+        scaling_result = self.scale_up_resource()
         
         # If scaling failed, abort the service process
         if not scaling_result:
@@ -183,24 +175,30 @@ class Container:
             
         self.current_request.processing_time = random.expovariate(service_rate)*self.cluster.processing_time_factor
         # self.current_request.processing_time = service_time  # Track processing time for this request
-        service_time = self.current_request.processing_time + self.current_request.network_delay
+        # service_time = self.current_request.processing_time + self.current_request.network_delay
         if variables.VERBOSE:
-            print(f"{self.env.now:.2f} - {self.current_request} starting service in {self}. Expected duration: {service_time:.2f}")
-        yield self.env.timeout(service_time)
+            print(f"{self.env.now:.2f} - {self.current_request} starting service in {self}.")
+        yield self.env.timeout(self.current_request.processing_time)
         if variables.VERBOSE:
             print(f"{self.env.now:.2f} - {self.current_request} completed service time.")
 
+        # After processing, release the request
+        self.current_request.state = "Finished"
+        self.scale_down_resource() # this process also puts container to idle cycle
+
     def idle_lifecycle(self):
         """Manages the idle timeout for a container."""
+         # Update the container's state
+        self.state = "Idle"
+        self.idle_since = self.env.now
+        self.current_request = None
+        
+        # Put itself into the system's idle container store
+        self.system.app_idle_containers[self.cluster.name][self.app_id].append(self)
+
         if variables.VERBOSE:
             print(f"{self.env.now:.2f} - {self} is now idle. Starting idle timeout.")
-        try:
-            # Use the scheduler to calculate the idle timeout
-            # scheduler = self.system.schedulers[self.cluster.name]
-            # idle_timeout = scheduler.calculate_idle_timeout(self)
-            
-            if variables.VERBOSE:
-                print(f"{self.env.now:.2f} - Generated exponential idle timeout: {self.time_out:.2f}s for {self}")
+        try:            
             yield self.env.timeout(self.time_out)
             # If timeout completes without interruption, remove the container
             if variables.VERBOSE:
@@ -214,19 +212,14 @@ class Container:
             if self in self.server.containers:
                 self.server.containers.remove(self)
             
-            # Remove from idle container store in the system
+            # Remove itself from the system's idle container store 
             self.system.app_idle_containers[self.cluster.name][self.app_id].remove(self)
 
             # Mark container as dead and release resources
-            self.release_resources()
+            self.remove_container()
 
-
-            # We don't need to explicitly remove from idle_containers store here,
-            # as it would have been removed by 'get' if reused. If it times out,
-            # it's effectively unusable anyway after releasing resources.
 
         except simpy.Interrupt:
             # Interrupted means it was reused before timeout!
             if variables.VERBOSE:
                 print(f"{self.env.now:.2f} - {self} reused before idle timeout. Interrupt received.")
-            # No need to do anything here, the assign_request method handled the state change.

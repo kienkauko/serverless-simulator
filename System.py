@@ -55,7 +55,7 @@ class System:
                     total_request += arrival_rate
                     if arrival_rate > 0:
                         self.env.process(self.app_request_generator(app_id, node_id, arrival_rate))
-        print(f"Total expected request arrival rate: {total_request}.")
+        print(f"Total expected request arrival rate: {total_request}/time unit.")
 
     def app_request_generator(self, app_id, node_id, arrival_rate):
         """Generates requests for a specific application according to its Poisson process."""
@@ -111,8 +111,8 @@ class System:
                                     target_clusters[cluster], type='upload'))
             self.topology.remove_paths(request, target_clusters[cluster])
 
-            # Start the service lifecycle 
-            yield self.env.process(container.service_lifecycle())
+            # Start processing the request in the container
+            yield self.env.process(container.process_request())
 
             # Create the second transmission - download data from container
             self.topology.make_paths(request, target_clusters[cluster])
@@ -120,16 +120,11 @@ class System:
                                     target_clusters[cluster], type='download'))
             self.topology.remove_paths(request, target_clusters[cluster])
 
+            # Start the idle timeout process 
+            container.idle_timeout_process = self.env.process(container.idle_lifecycle())
+            
             # Update statistics
             self.update_end_statistics(request, 'success')
-
-            # Release request and resources
-            request.state = "Finished"
-            container.release_request() # this process also puts container to idle cycle
-
-            # Put the container into the idle pool
-            self.app_idle_containers[cluster.name][container.app_id].append(container)
-
         else:
             # print(f"{self.env.now:.2f} - Failed to assign request {request} to a container.")
             self.update_end_statistics(request, 'compute_failed')
@@ -161,20 +156,29 @@ class System:
             # app_stats[request.app_id]['processed'] += 1
             
             # Record request location
-            if request.assigned_cluster.startswith("cloud"):
+            if request.assigned_cluster == variables.CENTRAL_CLOUD:
                 variables.request_stats['offloaded_to_cloud'] += 1
             # Compute latencies: sum of propagation, spawn, and processing times
             total_latency = request.network_delay + request.spawn_time + request.processing_time
             
             # Update global latency stats
             variables.latency_stats['total_latency'] += total_latency
-            variables.latency_stats['propagation_delay'] += request.prop_delay
+            # variables.latency_stats['propagation_delay'] += request.prop_delay
             variables.latency_stats['spawning_time'] += request.spawn_time
             variables.latency_stats['processing_time'] += request.processing_time
             variables.latency_stats['network_time'] += request.network_delay  # Add network time to stats
             # latency_stats['waiting_time'] += request.waiting_time  # Add waiting time to stats
             variables.latency_stats['count'] += 1
 
+            # Update each request latency
+            # Store individual request data for comprehensive analysis
+            if variables.SAVE_INDIVIDUAL_LATENCIES:
+                variables.accepted_request_latencies.append((
+                    request.origin_node,
+                    request.network_delay,
+                    total_latency,
+                    request.bottleneck
+                ))
             # Update congested path statistics
             if request.bottleneck is not None:
                 variables.congested_paths[request.bottleneck] += 1

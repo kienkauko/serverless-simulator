@@ -16,10 +16,10 @@ def load_and_process_data():
     mask = (df_filtered['cluster_strategy'].isin(massive_strategies)) & (df_filtered['edge_server_number'] != 5000)
     df_filtered = df_filtered[~mask]
     
-    # Convert traffic_intensity to offered load percentage (0-100%)
+    # Convert traffic_intensity to offered load percentage (5-100%)
     # traffic_intensity ranges from 0.0001 to 0.002 with step 0.0001
-    # This corresponds to 0-100% offered load
-    df_filtered['offered_load'] = ((df_filtered['traffic_intensity'] - 0.0001) / (0.002 - 0.0001)) * 100
+    # This corresponds to 5-100% offered load
+    df_filtered['offered_load'] = ((df_filtered['traffic_intensity'] - 0.0001) / (0.002 - 0.0001)) * 95 + 5
     
     return df_filtered
 

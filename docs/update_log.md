@@ -1,6 +1,16 @@
 # Update Log
 
-### Updated 21/10/2025
+## Updated 25/10/2025
+**Commit:** []()
+
+### Changes
+
+- `multi_cases` has been updated with to adapt to all the changes
+- Some functions' name in `System.py` and `Container.py` are changed.
+- Update topologies of some selected countries in [/topology/countries](../topology/countries)  folder.
+  
+
+## Updated 21/10/2025
 **Commit:** [31f1d3e](https://github.com/kienkauko/serverless-simulator/commit/31f1d3ed2870d3a310b969e42020a6360d713638)
 
 ### Bug Fix
@@ -18,6 +28,7 @@
 - Refactored TCP delay calculation in [`Topology.update_request_delay()`](../Topology.py) to support phased connection management
 - Merged `make_paths()` and `implement_path()` into single function for improved code organization
 - Merged `remove_paths()` and `release_path()` into single function (matching above pattern)
+- Removed `reservation` option for Topology, now only `ps` is available.
   
 
 
