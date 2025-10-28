@@ -14,7 +14,7 @@ import Topology
 import Scheduler
 
 # --- Excel Setup ---
-output_dir = './figures'
+output_dir = './figures/{}'.format(variables.COUNTRY_CODE)
 average_results_dir = os.path.join(output_dir, 'average_results')
 individual_latency_dir = os.path.join(output_dir, 'individual_latency')
 
@@ -80,18 +80,18 @@ def run_single_simulation(simulation_metrics):
     individual_latencies = variables.accepted_request_latencies
 
     # Calculate mean power, RAM, and CPU
-    mean_power = 0
-    mean_ram = 0
-    mean_cpu = 0
+    energy = 0
+    ram_time = 0
+    cpu_time = 0
     for cluster_name, cluster in topology.clusters.items():
-        mean_power += cluster.get_mean_power('cluster')
-        mean_ram += cluster.get_mean_ram('cluster')
-        mean_cpu += cluster.get_mean_cpu('cluster')
+        energy += cluster.total_energy_usage_area
+        ram_time += cluster.total_ram_usage_area
+        cpu_time += cluster.total_cpu_usage_area
 
     simulation_metrics.update({
-        'mean_power': float(f"{mean_power:.1f}"),
-        'mean_ram': float(f"{mean_ram:.1f}"),
-        'mean_cpu': float(f"{mean_cpu:.1f}"),
+        'energy': float(f"{energy:.1f}"),
+        'ram_time': float(f"{ram_time:.1f}"),
+        'cpu_time': float(f"{cpu_time:.1f}"),
     })
     
     print(f"\n--- RESULTS FOR THIS RUN ---")
@@ -148,9 +148,11 @@ def save_individual_latencies(sim_results, individual_latencies, individual_late
 if __name__ == "__main__":
 
     # Iterative variables
-    cases = ["centralized_cloud"]
+    cases = ["centralized_cloud"] # Options: "massive_edge_cloud", "centralized_cloud"
     # intensities = [i / 100000 for i in range(10, 210, 10)] # start=0.00005, stop=0.001, step=0.0001
-    intensities = [0.001, 0.004, 0.007, 0.01] # start=0.00005, stop=0.001, step=0.0001
+    # intensities = [0.001, 0.002, 0.003, 0.004, 0.005] # start=0.00005, stop=0.001, step=0.0001
+    intensities = [0.0003] # start=0.00005, stop=0.001, step=0.0001
+
     num_edge_servers = [5000]
     link_utilizations = [0.0]  
     # Non-iterative variables
@@ -158,7 +160,7 @@ if __name__ == "__main__":
     simulation_tasks = []
     for case in cases:
         if case.startswith("massive_edge"):
-            for num_server in [5000]:
+            for num_server in num_edge_servers:
                 for intensity in intensities:
                     for link_util in link_utilizations:                        
                         simulation_metrics = {
@@ -185,7 +187,7 @@ if __name__ == "__main__":
                     simulation_tasks.append((simulation_metrics,))
 
     # --- 2. Run simulations in parallel ---
-    num_processes = 4
+    num_processes = 5
     print(f"\nStarting {len(simulation_tasks)} simulations on {num_processes} processes...")
     
     with multiprocessing.Pool(processes=num_processes) as pool:
@@ -221,9 +223,9 @@ if __name__ == "__main__":
             'avg_spawn_time': sim_results['avg_spawn_time'],
             'avg_processing_time': sim_results['avg_processing_time'],
             'avg_network_time': sim_results['avg_network_time'],
-            'mean_power': sim_results['mean_power'],
-            'mean_ram': sim_results['mean_ram'],
-            'mean_cpu': sim_results['mean_cpu']
+            'energy': sim_results['energy'],
+            'ram_time': sim_results['ram_time'],
+            'cpu_time': sim_results['cpu_time']
         })
     
         # Append congestion results

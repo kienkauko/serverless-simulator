@@ -1,7 +1,7 @@
 import random
 # --- Configuration ---
 RANDOM_SEED = 42
-SIM_TIME = 500  # Simulation time units (e.g., seconds)
+SIM_TIME = 400  # Simulation time units (e.g., seconds)
 METRIC_RECORDED_TIME = 0  # Time after which metrics are recorded
 VERBOSE = False  # Set to True to enable detailed logging
 
@@ -10,7 +10,9 @@ CONTAINER_ASSIGN_RATE = 1000000.0 # Average rate for request assignment (very fa
 
 # Topology configuration
 USE_TOPOLOGY = True  # Enable topology routing
-TOPOLOGY_PATH = "./topology/edge.json"
+COUNTRY_CODE = "AUS"  # Country code for topology selection
+TOPOLOGY_PATH = f"./topology/countries/{COUNTRY_CODE}/result.json"
+# TOPOLOGY_PATH = "./topology/Germany.json"
 # CLUSTER_PATH = "./topology/cluster.json"
 NETWORK_MODEL = "ps" # Options: "ps", "reservation"
 
@@ -54,7 +56,7 @@ LINK_UTILIZATION = {
 # --- Multi-Cluster Configuration ---
 
 # Traffic intensity factor to scale arrival rates based on node population
-TRAFFIC_INTENSITY = 0.0003  # Adjust this factor to scale overall traffic, default: 0.0001
+TRAFFIC_INTENSITY = 0.0001  # Adjust this factor to scale overall traffic, default: 0.0001
 NODE_INTENSITY = 10  # Percentage of level 3 nodes generating traffic (0-100)
 # Application definitions for heterogeneous workloads
 APPLICATIONS = {

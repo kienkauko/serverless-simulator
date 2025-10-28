@@ -1,0 +1,5 @@
+# Ignore figures/examined folder
+figures/examined/
+
+# Ignore Kien.zip file
+topology/Kien.zip

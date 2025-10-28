@@ -74,10 +74,27 @@ This function is fundamental and is called whenever route between two nodes are 
 > **Note:** Reservation mode performs simple bandwidth checking but is deprecated and not actively used in current simulations.
 
 ## 3. Topology JSON File Structure
-Information about topology is found in `edge.json` file. This file describes a pseudo network topology of Germany. The structure is:
+Currently, topologies of five countries: Australia, German, France, USA and Vietnam are presented in [countries](../topology/countries/) folder. Out of all files there, the most important file, which is used by the simulator, is `result.json`, which has encapsulates all the important information. You can also visually examine and interact the topology by opening `result_folium_map.html` with a web browser.
+
+The `result.json` structure is:
 
 ```json
 {
+     "clusters": [
+        {
+            "name": "central_cloud", 
+            "node": "4892",
+            "num_servers": 40000, 
+            "server_cpu": 200.0,
+            "server_ram": 200.0,
+            "power_max": 150,
+            "power_min": 50,
+            "spawn_time_factor": 0.5,
+            "processing_time_factor": 0.6
+            
+        }
+    ]
+    ,
     "nodes": [
         {
             "name": "1_R0",
@@ -102,7 +119,7 @@ Information about topology is found in `edge.json` file. This file describes a p
     ]
 }
 ```
-
+- **`clusters`**: Information about predefined clusters. Currently, only centralized DC is defined here.
 - **`nodes`**: Information about switch nodes
 - **`links`**: Information about physical links connecting two switch nodes
 

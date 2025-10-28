@@ -15,7 +15,7 @@ class Topology:
         self.bandwidth_factor = variables.TRAFFIC_INTENSITY # Scale following the traffic intensity
         self.link_util_enable = variables.LINK_UTILIZATION_ENABLE
         self.link_utilization = variables.LINK_UTILIZATION
-
+        print("Country: ", variables.COUNTRY_CODE)
         print(f"Initializing topology with network model: {self.network_model}, "
               f"bandwidth factor enabled: {self.bw_factor_enable}, "
               f"link utilization enabled: {self.link_util_enable}")

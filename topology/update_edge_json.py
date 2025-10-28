@@ -7,10 +7,11 @@ import numpy as np
 
 def main():
     # Path to the GeoPackage file
-    gpkg_path = "./topology/df_centroids.gpkg"
-    
+
+    country_code = "DEU"  # Change this to the desired country code
+    gpkg_path = f"./topology/countries/{country_code}/df_centroids.gpkg"
     # Path to the edge.json file
-    edge_json_path = os.path.join("topology", "edge.json")
+    edge_json_path = f"./topology/countries/{country_code}/result.json"
     
     print(f"Reading GeoPackage file: {gpkg_path}")
     try:
@@ -18,7 +19,7 @@ def main():
         gdf = gpd.read_file(gpkg_path)
         
         # Check if 'id' and 'parent_id' columns exist
-        required_columns = ['id', 'parent_id']
+        required_columns = ['id', 'parent_id', 'pop']
         missing_columns = [col for col in required_columns if col not in gdf.columns]
         
         if missing_columns:
@@ -28,11 +29,15 @@ def main():
         
         # Create a dictionary mapping node IDs to parent IDs, skipping NaN values
         node_parent_map = {}
+        node_population_map = {}
         for idx, row in gdf.iterrows():
             if pd.notna(row['id']) and pd.notna(row['parent_id']):
                 node_parent_map[int(row['id'])] = int(row['parent_id'])
+            if pd.notna(row['id']) and pd.notna(row['pop']):
+                node_population_map[int(row['id'])] = row['pop']
         
         print(f"Found {len(node_parent_map)} nodes with valid parent IDs")
+        print(f"Found {len(node_population_map)} nodes with valid population data")
         
         # Read the edge.json file
         with open(edge_json_path, 'r') as f:
@@ -42,6 +47,7 @@ def main():
         updated_count = 0
         not_found_count = 0
         not_found_ids = []
+        population_updated_count = 0
         
         for node in edge_data["nodes"]:
             # Extract the node ID by removing "_R0" suffix
@@ -58,8 +64,14 @@ def main():
                 else:
                     not_found_count += 1
                     not_found_ids.append(node_id)
+                
+                # Add population to the node
+                if node_id in node_population_map:
+                    node["population"] = node_population_map[node_id]
+                    population_updated_count += 1
         
         print(f"Updated {updated_count} nodes with parent IDs")
+        print(f"Updated {population_updated_count} nodes with population data")
         if not_found_count > 0:
             print(f"Warning: Could not find parent IDs for {not_found_count} nodes")
             print(f"First 10 IDs not found: {not_found_ids[:10]}")
@@ -68,7 +80,7 @@ def main():
         with open(edge_json_path, 'w') as f:
             json.dump(edge_data, f, indent=4)
         
-        print(f"Updated edge.json file saved to {edge_json_path}")
+        print(f"Updated json file saved to {edge_json_path}")
         
     except Exception as e:
         print(f"Error: {e}")

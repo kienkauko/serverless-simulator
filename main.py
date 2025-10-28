@@ -97,7 +97,7 @@ for key, value in request_stats.items():
     print(f"{key.replace('_', ' ').capitalize()}: {value}")
 
 # Use the log_result() function to get calculated metrics
-results = log_result()
+results = log_ave_result()
 
 print(f"{'Total requests counted':<30}: {latency_stats['count']}")
 if request_stats['generated'] > 0:
