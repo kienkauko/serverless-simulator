@@ -1,13 +1,22 @@
 # Update Log
 
-## Updated 25/10/2025
+## Updated 29/10/2025
 **Commit:** []()
+
+### Changes
+
+- Previously, all processes run multiple scenarios in `multi_cases` must wait each other before writing results to file. Now, process that runs faster will write result to files immediately without waiting for others. This significantly reduces RAM usage and save some runtime. 
+- Update more info in [variables_and_metrics](/docs/variables_and_metrics.md) doc.
+
+## Updated 25/10/2025
+**Commit:** [9d7ec23]()
 
 ### Changes
 
 - `multi_cases` has been updated with to adapt to all the changes
 - Some functions' name in `System.py` and `Container.py` are changed.
 - Update topologies of some selected countries in [/topology/countries](../topology/countries)  folder.
+- Add `gitignore` to ingnore unwanted files.
   
 
 ## Updated 21/10/2025

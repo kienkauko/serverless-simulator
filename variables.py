@@ -20,7 +20,7 @@ CLUSTER_STRATEGY = "centralized_cloud"  # Options: "massive_edge_cloud", "centra
 CENTRAL_CLOUD = "central_cloud"  # Central cloud name in the topology
 # CENTRAL_CLOUD_NODE = "12876"  # Central cloud node ID in the topology
 EDGE_SERVER_NUMBER = 40000  # CPU capacity for all MECs
-EDGE_DC_LEVEL = 1
+EDGE_DC_LEVEL = 2
 EDGE_SERVER_PROVISION_STRATEGY = "equally"  # Options: "equally", "population_weighted"
 CLOUD_SPAWN_TIME_FACTOR = 0.5  # Cloud spawn time multiplier (faster)
 CLOUD_PROCESSING_TIME_FACTOR = 0.6  # Cloud processing time multiplier (faster)
@@ -72,8 +72,8 @@ APPLICATIONS = {
         "max_req_cpu": 20.0,  # Maximum CPU demand for request
         "min_req_ram": 7.0,  # Minimum RAM demand for request
         "max_req_ram": 7.0,  # Maximum RAM demand for request
-        "bandwidth_direct": 40000000,  # Bandwidth demand for this application: bit per second
-        "bandwidth_indirect": 1000000,  # Bandwidth demand for this application: bit per second
+        # "bandwidth_direct": 40000000,  # Bandwidth demand for this application: bit per second
+        # "bandwidth_indirect": 1000000,  # Bandwidth demand for this application: bit per second
         "data_location": "12876",  # Location of data for this application - Cloud node
         "packet_size_direct_upload": 163886080,  # in bits, default to 10 MB
         "packet_size_direct_download": 81920,  # in bits, default to 10 KB

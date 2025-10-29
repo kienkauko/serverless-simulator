@@ -15,3 +15,9 @@ pyproj>=3.4.0
 
 # Network analysis
 networkx>=2.8.0
+
+# File locking for concurrent writes
+filelock>=3.0.0
+
+# Excel file handling
+openpyxl>=3.0.0

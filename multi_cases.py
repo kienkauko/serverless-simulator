@@ -5,6 +5,7 @@ import random
 import pandas as pd
 import multiprocessing
 import pickle
+import filelock
 
 # We need to be able to modify variables and re-run the simulation.
 # We will import the modules we need to modify/reset.
@@ -144,16 +145,104 @@ def save_individual_latencies(sim_results, individual_latencies, individual_late
     print(f"Saved summary (first 1000 entries) to {csv_filepath}")
 
 
+def save_single_result(result_tuple):
+    """
+    Callback function to save results immediately when a simulation finishes.
+    This function is called by the multiprocessing pool as soon as each task completes.
+    
+    Args:
+        result_tuple: Tuple of (sim_results, individual_latencies) from run_single_simulation
+    """
+    sim_results, individual_latencies = result_tuple
+    
+    # Save individual latencies immediately
+    save_individual_latencies(sim_results, individual_latencies, individual_latency_dir)
+    
+    # Get the input parameters from the results
+    case = sim_results['strategy']
+    num_server = sim_results['num_edge_server']
+    intensity = sim_results['traffic_intensity']
+    link_util = sim_results['link_utilization']
+    
+    # Prepare main results row
+    main_result = {
+        'cluster_strategy': case,
+        'edge_server_number': num_server,
+        'traffic_intensity': intensity,
+        'link_utilization': link_util,
+        'blocking_percentage': sim_results['blocking_percentage'],
+        'accepted_requests': sim_results['accepted_requests'],
+        'avg_offloaded_to_cloud': sim_results['avg_offloaded_to_cloud'],
+        'avg_total_latency': sim_results['avg_total_latency'],
+        'avg_spawn_time': sim_results['avg_spawn_time'],
+        'avg_processing_time': sim_results['avg_processing_time'],
+        'avg_network_time': sim_results['avg_network_time'],
+        'energy': sim_results['energy'],
+        'ram_time': sim_results['ram_time'],
+        'cpu_time': sim_results['cpu_time']
+    }
+    
+    # Prepare congestion results row
+    congestion_result = {
+        'cluster_strategy': case,
+        'edge_server_number': num_server,
+        'traffic_intensity': intensity,
+        'link_utilization': link_util
+    }
+    for key in congestion_keys:
+        congestion_result[key] = sim_results['congested_paths'].get(key, 0)
+    
+    # Generate Excel filename
+    filename = f"{variables.EDGE_SERVER_PROVISION_STRATEGY}_level_{variables.EDGE_DC_LEVEL}_timeout_{variables.UNIVERSAL_TIMEOUT}.xlsx"
+    excel_file_path = os.path.join(average_results_dir, filename)
+    
+    # Thread-safe file writing using a lock
+    lock_file = excel_file_path + '.lock'
+    lock = filelock.FileLock(lock_file, timeout=30)
+    
+    try:
+        with lock:
+            # Read existing data or create new DataFrames
+            if os.path.exists(excel_file_path):
+                try:
+                    main_df = pd.read_excel(excel_file_path, sheet_name='Main_Results')
+                    congestion_df = pd.read_excel(excel_file_path, sheet_name='Congestion_Results')
+                except Exception as e:
+                    print(f"Warning: Could not read {excel_file_path}. Creating new file. Error: {e}")
+                    main_df = pd.DataFrame()
+                    congestion_df = pd.DataFrame()
+            else:
+                main_df = pd.DataFrame()
+                congestion_df = pd.DataFrame()
+            
+            # Append new results
+            main_df = pd.concat([main_df, pd.DataFrame([main_result])], ignore_index=True)
+            congestion_df = pd.concat([congestion_df, pd.DataFrame([congestion_result])], ignore_index=True)
+            
+            # Write back to Excel
+            with pd.ExcelWriter(excel_file_path, engine='openpyxl') as writer:
+                main_df.to_excel(writer, sheet_name='Main_Results', index=False)
+                congestion_df.to_excel(writer, sheet_name='Congestion_Results', index=False)
+            
+            print(f"✓ Saved results to {excel_file_path} (Strategy: {case}, Intensity: {intensity})")
+    
+    except filelock.Timeout:
+        print(f"✗ Timeout waiting for file lock on {excel_file_path}. Skipping save for this result.")
+    
+    # Return a minimal summary to keep in memory (optional, for final reporting)
+    return {'strategy': case, 'intensity': intensity, 'status': 'completed'}
+
+
 # --- Main Loop for Multiple Cases ---
 if __name__ == "__main__":
 
     # Iterative variables
-    cases = ["centralized_cloud"] # Options: "massive_edge_cloud", "centralized_cloud"
+    cases = ["centralized_cloud", "massive_edge_cloud", "massive_edge"] # Options: "massive_edge_cloud", "centralized_cloud"
     # intensities = [i / 100000 for i in range(10, 210, 10)] # start=0.00005, stop=0.001, step=0.0001
-    # intensities = [0.001, 0.002, 0.003, 0.004, 0.005] # start=0.00005, stop=0.001, step=0.0001
-    intensities = [0.0003] # start=0.00005, stop=0.001, step=0.0001
+    intensities = [0.001, 0.002, 0.003, 0.004, 0.005] # start=0.00005, stop=0.001, step=0.0001
+    # intensities = [0.0003] # start=0.00005, stop=0.001, step=0.0001
 
-    num_edge_servers = [5000]
+    num_edge_servers = [15000]
     link_utilizations = [0.0]  
     # Non-iterative variables
     # --- 1. Generate all simulation tasks ---
@@ -186,92 +275,42 @@ if __name__ == "__main__":
                     }
                     simulation_tasks.append((simulation_metrics,))
 
-    # --- 2. Run simulations in parallel ---
-    num_processes = 5
+    # --- 2. Run simulations in parallel with immediate result saving ---
+    num_processes = 6
     print(f"\nStarting {len(simulation_tasks)} simulations on {num_processes} processes...")
+    print("Results will be saved immediately as each simulation completes.\n")
     
+    completed_count = [0]  # Use list to allow modification in nested function
+    total_count = len(simulation_tasks)
+    
+    def result_callback(result):
+        """Callback executed when each simulation completes."""
+        completed_count[0] += 1
+        print(f"\n[Progress: {completed_count[0]}/{total_count} completed]")
+        save_single_result(result)
+    
+    def error_callback(error):
+        """Callback executed when a simulation fails."""
+        print(f"\n✗ Simulation failed with error: {error}")
+        completed_count[0] += 1
+    
+    # Use apply_async to process each result immediately as it completes
     with multiprocessing.Pool(processes=num_processes) as pool:
-        # starmap runs the function with each tuple of arguments from the list
-        results = pool.starmap(run_single_simulation, simulation_tasks)
-    
-    print("\nAll parallel simulations finished. Processing results...")
-
-    # --- 3. Process results after all simulations are done ---
-    main_results_list = []
-    congestion_results_list = []
-
-    for sim_results, individual_latencies in results:
-        # Save individual latencies if enabled
-        save_individual_latencies(sim_results, individual_latencies, individual_latency_dir)
+        async_results = []
+        for task_args in simulation_tasks:
+            # Submit each task and attach callbacks
+            async_result = pool.apply_async(
+                run_single_simulation,
+                args=task_args,
+                callback=result_callback,
+                error_callback=error_callback
+            )
+            async_results.append(async_result)
         
-        # Get the input parameters from the results
-        case = sim_results['strategy']
-        num_server = sim_results['num_edge_server']
-        intensity = sim_results['traffic_intensity']
-        link_util = sim_results['link_utilization']
-        
-        # Append main results
-        main_results_list.append({
-            'cluster_strategy': case,
-            'edge_server_number': num_server,
-            'traffic_intensity': intensity,
-            'link_utilization': link_util,
-            'blocking_percentage': sim_results['blocking_percentage'],
-            'accepted_requests': sim_results['accepted_requests'],
-            'avg_offloaded_to_cloud': sim_results['avg_offloaded_to_cloud'],
-            'avg_total_latency': sim_results['avg_total_latency'],
-            'avg_spawn_time': sim_results['avg_spawn_time'],
-            'avg_processing_time': sim_results['avg_processing_time'],
-            'avg_network_time': sim_results['avg_network_time'],
-            'energy': sim_results['energy'],
-            'ram_time': sim_results['ram_time'],
-            'cpu_time': sim_results['cpu_time']
-        })
+        # Wait for all tasks to complete
+        for async_result in async_results:
+            async_result.wait()
     
-        # Append congestion results
-        congestion_row = {
-            'cluster_strategy': case,
-            'edge_server_number': num_server,
-            'traffic_intensity': intensity,
-            'link_utilization': link_util
-        }
-        for key in congestion_keys:
-            congestion_row[key] = sim_results['congested_paths'].get(key, 0)
-        congestion_results_list.append(congestion_row)
-
-    # --- 4. Generate dynamic Excel filename based on configuration ---
-    filename = f"{variables.EDGE_SERVER_PROVISION_STRATEGY}_level_{variables.EDGE_DC_LEVEL}_timeout_{variables.UNIVERSAL_TIMEOUT}.xlsx"
-    excel_file_path = os.path.join(average_results_dir, filename)
-
-    # --- 5. Save results to Excel file ---
-    # Create DataFrames from the new simulation runs
-    new_main_df = pd.DataFrame(main_results_list)
-    new_congestion_df = pd.DataFrame(congestion_results_list)
-
-    # Check if the file exists to append data
-    if os.path.exists(excel_file_path):
-        print(f"Appending results to existing file: {excel_file_path}")
-        # Read the existing data
-        try:
-            old_main_df = pd.read_excel(excel_file_path, sheet_name='Main_Results')
-            old_congestion_df = pd.read_excel(excel_file_path, sheet_name='Congestion_Results')
-
-            # Concatenate old and new data
-            main_df = pd.concat([old_main_df, new_main_df], ignore_index=True)
-            congestion_df = pd.concat([old_congestion_df, new_congestion_df], ignore_index=True)
-        except Exception as e:
-            print(f"Warning: Could not read existing file {excel_file_path}. It might be corrupted. Overwriting. Error: {e}")
-            main_df = new_main_df
-            congestion_df = new_congestion_df
-    else:
-        print(f"Creating new results file: {excel_file_path}")
-        main_df = new_main_df
-        congestion_df = new_congestion_df
-
-
-    # Write the combined (or new) data back to the Excel file
-    with pd.ExcelWriter(excel_file_path, engine='openpyxl') as writer:
-        main_df.to_excel(writer, sheet_name='Main_Results', index=False)
-        congestion_df.to_excel(writer, sheet_name='Congestion_Results', index=False)
-
-    print(f"\nAll simulation cases are complete. Results saved to {excel_file_path}")
+    print("\n" + "="*60)
+    print(f"All {total_count} simulations completed!")
+    print("="*60)
