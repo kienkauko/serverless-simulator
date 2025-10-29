@@ -236,7 +236,7 @@ class Topology:
         # else:
 
     
-    def find_possible_path(self, src, dst, required_bw=None):
+    def find_possible_path(self, src, dst):
         """Find shortest path between two nodes considering bandwidth if specified."""
         # try:
         # if required_bw is None:
@@ -256,20 +256,20 @@ class Topology:
         # Check bandwidth constraints if path exists
         if path:
             self.save_cached_path(src, dst, path)
-            if self.network_model == 'reservation':
-                for i in range(len(path)-1):
-                    edge = self.graph.get_edge_data(path[i], path[i+1])
-                    if edge['available_bandwidth'] < required_bw:
-                        # Record the level of the failed link
-                        level = edge.get('level', 'unknown')
-                        if level not in failed_links_by_level:
-                            failed_links_by_level[level] = 0
-                        failed_links_by_level[level] += 1
-                        return False, None, failed_links_by_level
-                return True, path, failed_links_by_level
-            elif self.network_model == 'ps':
+            # if self.network_model == 'reservation':
+            #     for i in range(len(path)-1):
+            #         edge = self.graph.get_edge_data(path[i], path[i+1])
+            #         if edge['available_bandwidth'] < required_bw:
+            #             # Record the level of the failed link
+            #             level = edge.get('level', 'unknown')
+            #             if level not in failed_links_by_level:
+            #                 failed_links_by_level[level] = 0
+            #             failed_links_by_level[level] += 1
+            #             return False, None, failed_links_by_level
+            #     return True, path, failed_links_by_level
+            # elif self.network_model == 'ps':
                 # In PS model, we don't reject based on bandwidth.
-                return True, path, failed_links_by_level
+            return True, path, failed_links_by_level
         
         # if failed_links_by_level.empty():
         #     return True, None, failed_links_by_level
@@ -406,7 +406,7 @@ class Topology:
         Returns a tuple: (total_transmission_delay, bottleneck_level, delay_by_level).
         """
         if not path or len(path) < 2 or packet_size is None:
-            return 0, None, {}
+            return 0.001, None # Assume we have 1ms delay for directly connected path
         
         bottleneck_bandwidth = float('inf')
         bottleneck_level = None
@@ -531,19 +531,14 @@ class Topology:
 
         if variables.CLUSTER_STRATEGY == 'centralized_cloud':
             # direct to cloud
-            found_direct, path_direct, failed_links_map = self.find_possible_path(
-                request.origin_node,
-                self.clusters[variables.CENTRAL_CLOUD].node,
-                request.bandwidth_direct
-            )
+            found_direct, path_direct, failed_links_map = self.find_possible_path(request.origin_node,
+                self.clusters[variables.CENTRAL_CLOUD].node)
             # from cloud to data
             if found_direct:
                 if request.data_path_required:
                     found_indirect, path_indirect, failed_links_map = self.find_possible_path(
                         self.clusters[variables.CENTRAL_CLOUD].node,
-                        request.data_node,
-                        request.bandwidth_indirect
-                    )
+                        request.data_node)
                 else:
                     found_indirect = True
                     path_indirect = []
@@ -567,16 +562,14 @@ class Topology:
                 # direct to cloud
                 found_direct, path_direct, failed_links_map = self.find_possible_path(
                     request.origin_node,
-                    cluster.node,
-                    request.bandwidth_direct
+                    cluster.node
                 )
                 # from cloud to data
                 if found_direct:
                     if request.data_path_required:
                         found_indirect, path_indirect, failed_links_map = self.find_possible_path(
                             cluster.node,
-                            request.data_node,
-                            request.bandwidth_indirect
+                            request.data_node
                         )
                     else:
                         found_indirect = True
@@ -671,6 +664,8 @@ class Topology:
                 parent = self.graph.nodes[self.graph.nodes[node]['parent']]['parent']
             elif level == 2:
                 parent = self.graph.nodes[node]['parent']
+            elif level == 3:
+                parent = node
             else:
                 raise ValueError(f"Edge cloud proximity search only supports level 1 or 2")
                 # path = self.get_cached_path(node, grandparent)

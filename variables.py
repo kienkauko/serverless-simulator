@@ -10,13 +10,13 @@ CONTAINER_ASSIGN_RATE = 1000000.0 # Average rate for request assignment (very fa
 
 # Topology configuration
 USE_TOPOLOGY = True  # Enable topology routing
-COUNTRY_CODE = "AUS"  # Country code for topology selection
+COUNTRY_CODE = "VNM"  # Country code for topology selection
 TOPOLOGY_PATH = f"./topology/countries/{COUNTRY_CODE}/result.json"
 # TOPOLOGY_PATH = "./topology/Germany.json"
 # CLUSTER_PATH = "./topology/cluster.json"
 NETWORK_MODEL = "ps" # Options: "ps", "reservation"
 
-CLUSTER_STRATEGY = "centralized_cloud"  # Options: "massive_edge_cloud", "centralized_cloud", "distributed_cloud"
+CLUSTER_STRATEGY = "massive_edge"  # Options: "massive_edge_cloud", "centralized_cloud", "distributed_cloud"
 CENTRAL_CLOUD = "central_cloud"  # Central cloud name in the topology
 # CENTRAL_CLOUD_NODE = "12876"  # Central cloud node ID in the topology
 EDGE_SERVER_NUMBER = 40000  # CPU capacity for all MECs
@@ -269,8 +269,8 @@ def generate_app_demands(app_id):
         "ram_warm": app_config["min_warm_ram"],
         "cpu_demand": app_config["min_req_cpu"],
         "ram_demand": app_config["min_req_ram"],
-        "bandwidth_direct": app_config["bandwidth_direct"],
-        "bandwidth_indirect": app_config["bandwidth_indirect"],
+        # "bandwidth_direct": app_config["bandwidth_direct"],
+        # "bandwidth_indirect": app_config["bandwidth_indirect"],
         "packet_size_direct_upload": app_config["packet_size_direct_upload"],
         "packet_size_direct_download": app_config["packet_size_direct_download"],
         "packet_size_indirect_upload": app_config["packet_size_indirect_upload"],

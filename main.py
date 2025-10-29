@@ -180,7 +180,6 @@ if total_clusters > 0:
     print(f"  {'Avg CPU Reserve (%)':<28}: {avg_cpu_reserve:.2f}%")
     print(f"  {'Avg RAM Reserve (%)':<28}: {avg_ram_reserve:.2f}%")
     print(f"  {'Avg Power Usage (Cluster)':<28}: {avg_power_cluster:.2f} Watts")
-    print(f"  {'Avg Power Usage (Per Server)':<28}: {avg_power_server:.2f} Watts")
 else:
     print("No edge clusters available to calculate averages")
 

@@ -7,8 +7,8 @@ class Request:
         self.ram_warm = resource_demand["ram_warm"]
         self.cpu_demand = resource_demand["cpu_demand"]
         self.ram_demand = resource_demand["ram_demand"]
-        self.bandwidth_direct = resource_demand["bandwidth_direct"] # bw from user
-        self.bandwidth_indirect = resource_demand["bandwidth_indirect"] # bw from data 
+        # self.bandwidth_direct = resource_demand["bandwidth_direct"] # bw from user
+        # self.bandwidth_indirect = resource_demand["bandwidth_indirect"] # bw from data 
         self.packet_size_direct_upload = resource_demand["packet_size_direct_upload"] # in bits, default to 1500 bytes (MTU)
         self.packet_size_direct_download = resource_demand["packet_size_direct_download"] # in bits, default to 1500 bytes (MTU)
         self.packet_size_indirect_upload = resource_demand["packet_size_indirect_upload"] # in bits, default to 1500 bytes (MTU)
