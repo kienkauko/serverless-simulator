@@ -86,15 +86,8 @@ class Topology:
                     utilization = self.link_utilization[combined_level]
                     bandwidth = bandwidth * (1 - utilization)
                 
-                # Add edge to the graph with attributes based on the network model
-                if self.network_model == 'reservation':
-                    self.graph.add_edge(n1_id, n2_id, 
-                                       bandwidth=bandwidth, 
-                                       available_bandwidth=bandwidth, 
-                                       latency=latency,
-                                       level=combined_level)
-                elif self.network_model == 'ps':
-                    self.graph.add_edge(n1_id, n2_id, 
+                # Add edge to the graph with attributes 
+                self.graph.add_edge(n1_id, n2_id, 
                                        bandwidth=bandwidth, 
                                        num_active_flows=0, 
                                        latency=latency,
@@ -115,9 +108,8 @@ class Topology:
         # Initialize edge DCs if strategy requires it
         if "edge" in variables.CLUSTER_STRATEGY:
             print("Calculating nearby clusters for each node based on strategy: ", variables.CLUSTER_STRATEGY)
-            if variables.CLUSTER_STRATEGY.startswith("massive_edge"):
-                self.edge_clusters = self.defined_edge_DCs(variables.EDGE_DC_LEVEL, variables.EDGE_SERVER_PROVISION_STRATEGY)
-                self.clusters.update(self.edge_clusters)
+            self.edge_clusters = self.defined_edge_DCs(variables.EDGE_DC_LEVEL,  variables.CLUSTER_STRATEGY, variables.EDGE_SERVER_PROVISION_STRATEGY)
+            self.clusters.update(self.edge_clusters)
             # As we assume requests come from layer-3 node, we need to define which clusters can
             # these requests reach, they are called nearby clusters
             for node_id in [n for n, data in self.graph.nodes(data=True) if data.get('level') == 3]:
@@ -250,8 +242,6 @@ class Topology:
         if not path:
             path = self.find_hierachical_path(src, dst)
             
-        # Track failed links by level
-        failed_links_by_level = {}
         
         # Check bandwidth constraints if path exists
         if path:
@@ -269,12 +259,12 @@ class Topology:
             #     return True, path, failed_links_by_level
             # elif self.network_model == 'ps':
                 # In PS model, we don't reject based on bandwidth.
-            return True, path, failed_links_by_level
+            return True, path
         
         # if failed_links_by_level.empty():
         #     return True, None, failed_links_by_level
         else:
-            return False, None, failed_links_by_level
+            return False, None
             
         # except nx.NetworkXNoPath:
         #     return False, None, failed_links_by_level
@@ -525,18 +515,17 @@ class Topology:
                      dict(cluster -> combined_failed_links) )
         """
         list_paths = {}
-        failed_links_map = {}
         found_direct = False
         found_indirect = False
 
         if variables.CLUSTER_STRATEGY == 'centralized_cloud':
             # direct to cloud
-            found_direct, path_direct, failed_links_map = self.find_possible_path(request.origin_node,
+            found_direct, path_direct = self.find_possible_path(request.origin_node,
                 self.clusters[variables.CENTRAL_CLOUD].node)
             # from cloud to data
             if found_direct:
                 if request.data_path_required:
-                    found_indirect, path_indirect, failed_links_map = self.find_possible_path(
+                    found_indirect, path_indirect = self.find_possible_path(
                         self.clusters[variables.CENTRAL_CLOUD].node,
                         request.data_node)
                 else:
@@ -546,28 +535,28 @@ class Topology:
             if found_direct and found_indirect:
                 list_paths[self.clusters[variables.CENTRAL_CLOUD]] = [path_direct, path_indirect]
                 # failed_links_map[self.clusters['cloud']] = combined
-                return True, list_paths, {}
+                return True, list_paths
             else:
                 # merge failed‐links counts
                 # combined = {}
                 # for fl in (failed_direct or {}), (failed_indirect or {}):
                 #     for lvl, cnt in fl.items():
                 #         combined[lvl] = combined.get(lvl, 0) + cnt
-                return False, {}, failed_links_map
+                return False, {}
                     
         # elif CLUSTER_STRATEGY == 'distributed_cloud':
         else:
             nearby_clusters = self.graph.nodes[request.origin_node]['nearby_clusters']
             for cluster in nearby_clusters:
                 # direct to cloud
-                found_direct, path_direct, failed_links_map = self.find_possible_path(
+                found_direct, path_direct = self.find_possible_path(
                     request.origin_node,
                     cluster.node
                 )
                 # from cloud to data
                 if found_direct:
                     if request.data_path_required:
-                        found_indirect, path_indirect, failed_links_map = self.find_possible_path(
+                        found_indirect, path_indirect = self.find_possible_path(
                             cluster.node,
                             request.data_node
                         )
@@ -579,9 +568,9 @@ class Topology:
                     list_paths[cluster] = [path_direct, path_indirect]
             # If no cluster could satisfy the request
             if not list_paths:
-                return False, {}, failed_links_map
+                return False, {}
             else:
-                return True, list_paths, failed_links_map
+                return True, list_paths
         # else:
         #     raise ValueError(f"Unknown topology strategy: {CLUSTER_STRATEGY}")
     
@@ -659,7 +648,7 @@ class Topology:
         """Find and return a list of clusters sorted by proximity to the given node"""
         # Create a list to store clusters and their latencies
         sorted_clusters = []
-        if type.startswith('massive_edge'):
+        if type.startswith('massive'):
             if level == 1:
                 parent = self.graph.nodes[self.graph.nodes[node]['parent']]['parent']
             elif level == 2:
@@ -667,24 +656,32 @@ class Topology:
             elif level == 3:
                 parent = node
             else:
-                raise ValueError(f"Edge cloud proximity search only supports level 1 or 2")
-                # path = self.get_cached_path(node, grandparent)
-                # Find the edge cluster that corresponds to the grandparent node
-                # edge_cluster = None
-                # cloud_cluster = None
+                raise ValueError(f"Edge cloud proximity search only supports level 1, 2 and 3")
             for cluster_name, cluster in self.edge_clusters.items():
                 if cluster.node == parent:
                     sorted_clusters.append(cluster) 
                     break
-            # Add central cloud for massive_edge_cloud strategy
-            if type == 'massive_edge_cloud':
-                for cluster_name, cluster in self.cloud_clusters.items():
-                    if cluster_name == variables.CENTRAL_CLOUD:
-                        sorted_clusters.append(cluster) 
-                        break  
-            return sorted_clusters                             
+        elif type.startswith('one_per_ring'):
+            if level == 3:
+                parent = self.graph.nodes[node]['parent']
+            elif level == 2:
+                parent = self.graph.nodes[self.graph.nodes[node]['parent']]['parent']
+            else:
+                raise ValueError(f"one_per_ring proximity search only supports level 2 and 3")
+            # Find clusters in the same parent group
+            for cluster_name, cluster in self.edge_clusters.items():
+                if self.graph.nodes[cluster.node]['parent'] == parent:
+                    sorted_clusters.append(cluster)    
         else:
             raise ValueError(f"Unknown cluster type for proximity search: {type}")
+        
+         # Add central cloud for any edge_cloud strategy
+        if 'cloud' in type:
+            for cluster_name, cluster in self.cloud_clusters.items():
+                if cluster_name == variables.CENTRAL_CLOUD:
+                    sorted_clusters.append(cluster) 
+                    break  
+        return sorted_clusters 
     
     def equally(self, level):
         """Provision servers equally among network nodes."""
@@ -711,7 +708,7 @@ class Topology:
         
         return edge_clusters
 
-    def population_weighted(self, level):
+    def population_massive(self, level):
         """Provision servers based on weighted population of network nodes."""
         level_nodes_data = {node: data['population'] for node, data in self.graph.nodes(data=True) if data.get('level') == level}
         total_population = sum(level_nodes_data.values())
@@ -751,12 +748,87 @@ class Topology:
         
         return edge_clusters
 
-    def defined_edge_DCs(self, level, strategy='equally'):
+    def population_one_per_ring(self, level):
+        """Provision servers with one DC per ring (parent group), selecting the highest population node.
+        Server allocation is weighted based on the total population of each group."""
+        if level not in [2, 3]:
+            raise ValueError(f"one_per_ring strategy only supports level 2 or 3, got {level}")
+        
+        # Group nodes by their parent and calculate total population per group
+        parent_groups = {}
+        group_populations = {}
+        
+        for node, data in self.graph.nodes(data=True):
+            if data.get('level') == level:
+                parent = data.get('parent')
+                if parent not in parent_groups:
+                    parent_groups[parent] = []
+                    group_populations[parent] = 0
+                parent_groups[parent].append((node, data['population']))
+                group_populations[parent] += data['population']
+        
+        # For each parent group, select the node with highest population
+        selected_nodes = {}
+        for parent, nodes_list in parent_groups.items():
+            # Find node with maximum population in this group
+            best_node, best_pop = max(nodes_list, key=lambda x: x[1])
+            # Store the selected node with its group's total population
+            selected_nodes[best_node] = group_populations[parent]
+        
+        # Calculate total population across all groups
+        total_population = sum(selected_nodes.values())
+        
+        # Calculate initial server distribution based on group population weight
+        server_distribution = {node: (pop / total_population) * variables.EDGE_SERVER_NUMBER 
+                              for node, pop in selected_nodes.items()}
+        
+        # Allocate integer number of servers and track remainders
+        allocated_servers = {node: int(dist) for node, dist in server_distribution.items()}
+        remainders = {node: dist - int(dist) for node, dist in server_distribution.items()}
+        
+        # Distribute remaining servers based on largest remainders
+        num_allocated = sum(allocated_servers.values())
+        servers_to_distribute = variables.EDGE_SERVER_NUMBER - num_allocated
+        
+        # Sort nodes by remainder descending
+        sorted_nodes_by_remainder = sorted(remainders, key=remainders.get, reverse=True)
+        
+        for i in range(servers_to_distribute):
+            node_to_get_server = sorted_nodes_by_remainder[i]
+            allocated_servers[node_to_get_server] += 1
+        
+        # Create edge clusters
+        edge_clusters = {}
+        for node_name, num_servers in allocated_servers.items():
+            if num_servers > 0:
+                cluster_name = f"edge-{node_name}"
+                config = {
+                    "name": cluster_name,
+                    "node": node_name,
+                    "num_servers": num_servers,
+                    "server_cpu": 100.0,
+                    "server_ram": 100.0,
+                    "power_max": 60,
+                    "power_min": 10
+                }
+                edge_clusters[cluster_name] = Cluster(self.env, config)
+        
+        return edge_clusters
+
+    def defined_edge_DCs(self, level, cluster_strategy, strategy='equally'):
         # Find all nodes with level=1
         if strategy == 'equally':
-            edge_clusters = self.equally(level)
+            if "massive" in cluster_strategy:
+                edge_clusters = self.equally(level)
+            else:
+                raise ValueError(f"Unknown edge DC provisioning cluster strategy for 'equally': {cluster_strategy}")
         elif strategy == 'population_weighted':
-            edge_clusters = self.population_weighted(level)
+            if "massive" in cluster_strategy:
+                edge_clusters = self.population_massive(level)
+            elif 'one_per_ring' in cluster_strategy:
+                edge_clusters = self.population_one_per_ring(level)
+            else:
+                raise ValueError(f"Unknown edge DC provisioning cluster strategy for 'population_weighted': {cluster_strategy}")
         else:
             raise ValueError(f"Unknown edge DC provisioning strategy: {strategy}")
 

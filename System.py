@@ -93,10 +93,10 @@ class System:
         request.waiting_start_time = self.env.now
         
         # Find cluster (DC or Edge DC) where request can be processed
-        link_found, target_clusters, failed_links_map = self.topology.find_cluster(request)
+        link_found, target_clusters = self.topology.find_cluster(request)
 
         if not link_found:
-            self.update_end_statistics(request, 'link_failed', failed_links_map)
+            self.update_end_statistics(request, 'link_failed')
             return
         
         # Delegate request handling to the LoadBalancer with viable cluster options
@@ -134,22 +134,22 @@ class System:
         variables.request_stats['generated'] += 1
         # app_stats[request.app_id]['generated'] += 1
 
-    def update_end_statistics(self, request, type, link_failed_map=None):
+    def update_end_statistics(self, request, type):
         if type == 'compute_failed':
             variables.request_stats['blocked_no_server_capacity'] += 1
             # app_stats[request.app_id]['blocked_no_server_capacity'] += 1
 
-        elif type == 'link_failed':
-            variables.request_stats['blocked_no_path'] += 1
-            # app_stats[request.app_id]['blocked_no_path'] += 1
-            for value in link_failed_map.values():
-                variables.request_stats['blocked_no_path_level_3-3'] += value.get('3-3', 0)
-                variables.request_stats['blocked_no_path_level_3-2'] += value.get('3-2', 0)
-                variables.request_stats['blocked_no_path_level_2-2'] += value.get('2-2', 0)
-                variables.request_stats['blocked_no_path_level_2-1'] += value.get('2-1', 0)
-                variables.request_stats['blocked_no_path_level_1-1'] += value.get('1-1', 0)
-                variables.request_stats['blocked_no_path_level_1-0'] += value.get('1-0', 0)
-                variables.request_stats['blocked_no_path_level_0-0'] += value.get('0-0', 0)
+        # elif type == 'link_failed':
+        #     variables.request_stats['blocked_no_path'] += 1
+        #     # app_stats[request.app_id]['blocked_no_path'] += 1
+        #     for value in link_failed_map.values():
+        #         variables.request_stats['blocked_no_path_level_3-3'] += value.get('3-3', 0)
+        #         variables.request_stats['blocked_no_path_level_3-2'] += value.get('3-2', 0)
+        #         variables.request_stats['blocked_no_path_level_2-2'] += value.get('2-2', 0)
+        #         variables.request_stats['blocked_no_path_level_2-1'] += value.get('2-1', 0)
+        #         variables.request_stats['blocked_no_path_level_1-1'] += value.get('1-1', 0)
+        #         variables.request_stats['blocked_no_path_level_1-0'] += value.get('1-0', 0)
+        #         variables.request_stats['blocked_no_path_level_0-0'] += value.get('0-0', 0)
         else:
             # Service finished
             variables.request_stats['processed'] += 1

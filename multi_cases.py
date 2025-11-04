@@ -276,7 +276,7 @@ if __name__ == "__main__":
                     simulation_tasks.append((simulation_metrics,))
 
     # --- 2. Run simulations in parallel with immediate result saving ---
-    num_processes = 6
+    num_processes = 5
     print(f"\nStarting {len(simulation_tasks)} simulations on {num_processes} processes...")
     print("Results will be saved immediately as each simulation completes.\n")
     
