@@ -157,6 +157,7 @@ if total_clusters > 0:
     total_ram_reserve = 0
     total_power_cluster = 0
     total_power_server = 0
+    total_energy = 0
     
     for cluster_name, cluster in topology.edge_clusters.items():
         total_cpu_usage += cluster.get_mean_cpu('cluster', 'usage')
@@ -165,6 +166,7 @@ if total_clusters > 0:
         total_ram_reserve += cluster.get_mean_ram('cluster', 'reserve')
         total_power_cluster += cluster.get_mean_power('cluster')
         total_power_server += cluster.get_mean_power('server')
+        total_energy += cluster.total_energy_usage_area
     
     # Calculate averages
     avg_cpu_usage = total_cpu_usage / total_clusters
@@ -180,6 +182,8 @@ if total_clusters > 0:
     print(f"  {'Avg CPU Reserve (%)':<28}: {avg_cpu_reserve:.2f}%")
     print(f"  {'Avg RAM Reserve (%)':<28}: {avg_ram_reserve:.2f}%")
     print(f"  {'Avg Power Usage (Cluster)':<28}: {avg_power_cluster:.2f} Watts")
+    print(f"  {'Total Energy Consumption':<28}: {total_energy:.2f} Joules")
+
 else:
     print("No edge clusters available to calculate averages")
 
