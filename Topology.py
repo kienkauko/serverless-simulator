@@ -1,6 +1,7 @@
 import networkx as nx
 import json
 import math
+import random
 from pyproj import Transformer
 from Cluster import Cluster
 import variables
@@ -35,6 +36,9 @@ class Topology:
         self.cloud_clusters = {}
         self.edge_clusters = {}
 
+        # Add DC mapping structure, use only for per_ring strategy!
+        self.node_dc_mapping = {}  # Maps node_id -> [list of DC node_ids]
+        
         # Load edge data from JSON (includes both node and link data)
         with open(variables.TOPOLOGY_PATH, 'r') as f:
             edge_data = json.load(f)
@@ -108,7 +112,9 @@ class Topology:
         # Initialize edge DCs if strategy requires it
         if "edge" in variables.CLUSTER_STRATEGY:
             print("Calculating nearby clusters for each node based on strategy: ", variables.CLUSTER_STRATEGY)
-            self.edge_clusters = self.defined_edge_DCs(variables.EDGE_DC_LEVEL,  variables.CLUSTER_STRATEGY, variables.EDGE_SERVER_PROVISION_STRATEGY)
+            self.edge_clusters = self.defined_edge_DCs(variables.EDGE_DC_LEVEL,  variables.CLUSTER_STRATEGY, \
+                                                        variables.EDGE_SERVER_PROVISION_STRATEGY, \
+                                                        variables.NUM_DC_PER_RING)
             self.clusters.update(self.edge_clusters)
             # As we assume requests come from layer-3 node, we need to define which clusters can
             # these requests reach, they are called nearby clusters
@@ -661,17 +667,43 @@ class Topology:
                 if cluster.node == parent:
                     sorted_clusters.append(cluster) 
                     break
-        elif type.startswith('one_per_ring'):
-            if level == 3:
-                parent = self.graph.nodes[node]['parent']
-            elif level == 2:
-                parent = self.graph.nodes[self.graph.nodes[node]['parent']]['parent']
-            else:
-                raise ValueError(f"one_per_ring proximity search only supports level 2 and 3")
-            # Find clusters in the same parent group
-            for cluster_name, cluster in self.edge_clusters.items():
-                if self.graph.nodes[cluster.node]['parent'] == parent:
-                    sorted_clusters.append(cluster)    
+        elif type.startswith('x_per_ring'):
+            nearby_dc_nodes = self.node_dc_mapping.get(node, [])
+            
+            if len(nearby_dc_nodes) == 1:
+                # Single DC, add it directly
+                dc_node = nearby_dc_nodes[0]
+                for cluster_name, cluster in self.edge_clusters.items():
+                    if cluster.node == dc_node:
+                        sorted_clusters.append(cluster)
+                        break
+            elif len(nearby_dc_nodes) > 1:
+                # Multiple DCs, find the nearest by hop count
+                min_hops = float('inf')
+                nearest_clusters = []
+                
+                for dc_node in nearby_dc_nodes:
+                    path = self.get_cached_path(node, dc_node)
+                    if not path:
+                        path = self.find_hierachical_path(node, dc_node)
+                        if path:
+                            self.save_cached_path(node, dc_node, path)
+                    
+                    if path:
+                        hops = len(path) - 1
+                        if hops < min_hops:
+                            min_hops = hops
+                            nearest_clusters = [dc_node]
+                        elif hops == min_hops:
+                            nearest_clusters.append(dc_node)
+                
+                # Pick one randomly if there are ties
+                if nearest_clusters:
+                    selected_dc = random.choice(nearest_clusters)
+                    for cluster_name, cluster in self.edge_clusters.items():
+                        if cluster.node == selected_dc:
+                            sorted_clusters.append(cluster)
+                            break
         else:
             raise ValueError(f"Unknown cluster type for proximity search: {type}")
         
@@ -748,11 +780,15 @@ class Topology:
         
         return edge_clusters
 
-    def population_one_per_ring(self, level):
-        """Provision servers with one DC per ring (parent group), selecting the highest population node.
-        Server allocation is weighted based on the total population of each group."""
+    def pop_x_per_ring(self, level, number):
+        """Provision servers with 'number' DCs per ring (parent group), selecting the highest population nodes.
+        Server allocation is weighted based on the total population of each group, then divided equally among the DCs in that ring.
+        
+        For level=3: Assigns nodes within a group to 'number' DCs within the same group.
+        For level=2: Assigns all level-3 nodes to 'number' level-2 DCs (their parent or parent's neighbors).
+        """
         if level not in [2, 3]:
-            raise ValueError(f"one_per_ring strategy only supports level 2 or 3, got {level}")
+            raise ValueError(f"pop_x_per_ring strategy only supports level 2 or 3, got {level}")
         
         # Group nodes by their parent and calculate total population per group
         parent_groups = {}
@@ -767,55 +803,99 @@ class Topology:
                 parent_groups[parent].append((node, data['population']))
                 group_populations[parent] += data['population']
         
-        # For each parent group, select the node with highest population
-        selected_nodes = {}
+        # For each parent group, select top 'number' nodes with highest population
+        selected_nodes_by_ring = {}  # {parent: [(node, group_population), ...]}
         for parent, nodes_list in parent_groups.items():
-            # Find node with maximum population in this group
-            best_node, best_pop = max(nodes_list, key=lambda x: x[1])
-            # Store the selected node with its group's total population
-            selected_nodes[best_node] = group_populations[parent]
+            # Sort nodes by population descending and take top 'number'
+            sorted_nodes = sorted(nodes_list, key=lambda x: x[1], reverse=True)
+            top_nodes = sorted_nodes[:min(number, len(sorted_nodes))]
+            # Store selected nodes with their group's total population
+            selected_nodes_by_ring[parent] = [(node, group_populations[parent]) for node, _ in top_nodes]
         
         # Calculate total population across all groups
-        total_population = sum(selected_nodes.values())
+        total_population = sum(group_populations.values())
         
-        # Calculate initial server distribution based on group population weight
-        server_distribution = {node: (pop / total_population) * variables.EDGE_SERVER_NUMBER 
-                              for node, pop in selected_nodes.items()}
+        # Calculate server allocation per ring based on group population weight
+        ring_server_allocation = {}
+        ring_server_remainders = {}
         
-        # Allocate integer number of servers and track remainders
-        allocated_servers = {node: int(dist) for node, dist in server_distribution.items()}
-        remainders = {node: dist - int(dist) for node, dist in server_distribution.items()}
+        for parent, group_pop in group_populations.items():
+            # Initial floating-point allocation for this ring
+            allocation = (group_pop / total_population) * variables.EDGE_SERVER_NUMBER
+            ring_server_allocation[parent] = int(allocation)
+            ring_server_remainders[parent] = allocation - int(allocation)
         
-        # Distribute remaining servers based on largest remainders
-        num_allocated = sum(allocated_servers.values())
+        # Distribute remaining servers to rings based on largest remainders
+        num_allocated = sum(ring_server_allocation.values())
         servers_to_distribute = variables.EDGE_SERVER_NUMBER - num_allocated
         
-        # Sort nodes by remainder descending
-        sorted_nodes_by_remainder = sorted(remainders, key=remainders.get, reverse=True)
+        sorted_rings_by_remainder = sorted(ring_server_remainders, key=ring_server_remainders.get, reverse=True)
         
         for i in range(servers_to_distribute):
-            node_to_get_server = sorted_nodes_by_remainder[i]
-            allocated_servers[node_to_get_server] += 1
+            ring_to_get_server = sorted_rings_by_remainder[i]
+            ring_server_allocation[ring_to_get_server] += 1
         
-        # Create edge clusters
+        # Now distribute each ring's servers equally among its selected nodes
         edge_clusters = {}
-        for node_name, num_servers in allocated_servers.items():
-            if num_servers > 0:
-                cluster_name = f"edge-{node_name}"
-                config = {
-                    "name": cluster_name,
-                    "node": node_name,
-                    "num_servers": num_servers,
-                    "server_cpu": 100.0,
-                    "server_ram": 100.0,
-                    "power_max": 60,
-                    "power_min": 10
-                }
-                edge_clusters[cluster_name] = Cluster(self.env, config)
+        for parent, nodes_list in selected_nodes_by_ring.items():
+            total_servers_for_ring = ring_server_allocation[parent]
+            num_nodes_in_ring = len(nodes_list)
+            
+            # Divide servers equally among nodes in this ring
+            servers_per_node = total_servers_for_ring // num_nodes_in_ring
+            remaining_servers = total_servers_for_ring % num_nodes_in_ring
+            
+            for i, (node_name, _) in enumerate(nodes_list):
+                # Give extra server to first 'remaining_servers' nodes
+                num_servers = servers_per_node + (1 if i < remaining_servers else 0)
+                
+                if num_servers > 0:
+                    cluster_name = f"edge-{node_name}"
+                    config = {
+                        "name": cluster_name,
+                        "node": node_name,
+                        "num_servers": num_servers,
+                        "server_cpu": 100.0,
+                        "server_ram": 100.0,
+                        "power_max": 60,
+                        "power_min": 10
+                    }
+                    edge_clusters[cluster_name] = Cluster(self.env, config)
+        
+        # === Build node_dc_mapping based on level ===
+        if level == 3:
+            # For level 3: Each level-3 node maps to DCs within its own group (same parent)
+            for parent, dc_nodes_list in selected_nodes_by_ring.items():
+                dc_node_ids = [dc_node for dc_node, _ in dc_nodes_list]
+                
+                # Extract all level-3 nodes from parent_groups
+                all_level3_in_group = [node for node, _ in parent_groups[parent]]
+                
+                # Assign these DCs to all level-3 nodes in the group
+                for node_id in all_level3_in_group:
+                    self.node_dc_mapping[node_id] = dc_node_ids
+        
+        elif level == 2:
+            # For level 2: Get all level-2 DCs
+            dc_node_ids = [dc_node for nodes_list in selected_nodes_by_ring.values() 
+                          for dc_node, _ in nodes_list]
+            
+            # For each grandparent group
+            for grandparent in selected_nodes_by_ring.keys():
+                # Extract all level-2 nodes from parent_groups
+                all_level2_in_group = [node for node, _ in parent_groups[grandparent]]
+                
+                # Find which DCs belong to this group
+                group_dc_nodes = [dc for dc in dc_node_ids if dc in all_level2_in_group]
+                
+                # Assign these DCs to all level-3 nodes whose parent is in this group
+                for node, data in self.graph.nodes(data=True):
+                    if data.get('level') == 3 and data.get('parent') in all_level2_in_group:
+                        self.node_dc_mapping[node] = group_dc_nodes
         
         return edge_clusters
 
-    def defined_edge_DCs(self, level, cluster_strategy, strategy='equally'):
+    def defined_edge_DCs(self, level, cluster_strategy, strategy='equally', number=1):
         # Find all nodes with level=1
         if strategy == 'equally':
             if "massive" in cluster_strategy:
@@ -825,8 +905,8 @@ class Topology:
         elif strategy == 'population_weighted':
             if "massive" in cluster_strategy:
                 edge_clusters = self.population_massive(level)
-            elif 'one_per_ring' in cluster_strategy:
-                edge_clusters = self.population_one_per_ring(level)
+            elif 'x_per_ring' in cluster_strategy:
+                edge_clusters = self.pop_x_per_ring(level, number)
             else:
                 raise ValueError(f"Unknown edge DC provisioning cluster strategy for 'population_weighted': {cluster_strategy}")
         else:

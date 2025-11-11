@@ -10,18 +10,19 @@ CONTAINER_ASSIGN_RATE = 1000000.0 # Average rate for request assignment (very fa
 
 # Topology configuration
 USE_TOPOLOGY = True  # Enable topology routing
-COUNTRY_CODE = "VNM"  # Country code for topology selection
+COUNTRY_CODE = "AUS"  # Country code for topology selection
 TOPOLOGY_PATH = f"./topology/countries/{COUNTRY_CODE}/result.json"
 # TOPOLOGY_PATH = "./topology/Germany.json"
 # CLUSTER_PATH = "./topology/cluster.json"
 NETWORK_MODEL = "ps" # Options: "ps", "reservation"
 
-CLUSTER_STRATEGY = "massive_edge"  # Options: "massive_edge", "massive_edge_cloud", "centralized_cloud", "one_per_ring_edge_cloud", "one_per_ring_edge"
+CLUSTER_STRATEGY = "x_per_ring_edge"  # Options: "massive_edge", "massive_edge_cloud", "centralized_cloud", "x_per_ring_edge_cloud", "x_per_ring_edge"
 CENTRAL_CLOUD = "central_cloud"  # Central cloud name in the topology
 # CENTRAL_CLOUD_NODE = "12876"  # Central cloud node ID in the topology
-EDGE_SERVER_NUMBER = 10000  # CPU capacity for all MECs
-EDGE_DC_LEVEL = 1
-EDGE_SERVER_PROVISION_STRATEGY = "equally"  # Options: "equally", "population_weighted"
+EDGE_SERVER_NUMBER = 15000  # CPU capacity for all MECs
+EDGE_DC_LEVEL = 3
+NUM_DC_PER_RING = 2  # Number of edge DCs per ring (used if strategy is 'x_per_ring')
+EDGE_SERVER_PROVISION_STRATEGY = "population_weighted"  # Options: "equally", "population_weighted"
 CLOUD_SPAWN_TIME_FACTOR = 0.5  # Cloud spawn time multiplier (faster)
 CLOUD_PROCESSING_TIME_FACTOR = 0.6  # Cloud processing time multiplier (faster)
 
@@ -56,7 +57,7 @@ LINK_UTILIZATION = {
 # --- Multi-Cluster Configuration ---
 
 # Traffic intensity factor to scale arrival rates based on node population
-TRAFFIC_INTENSITY = 0.0005  # Adjust this factor to scale overall traffic, default: 0.0001
+TRAFFIC_INTENSITY = 0.001  # Adjust this factor to scale overall traffic, default: 0.0001
 NODE_INTENSITY = 10  # Percentage of level 3 nodes generating traffic (0-100)
 # Application definitions for heterogeneous workloads
 APPLICATIONS = {

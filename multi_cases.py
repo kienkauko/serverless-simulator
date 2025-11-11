@@ -39,6 +39,7 @@ def run_single_simulation(simulation_metrics):
     # Set the parameters from the dictionary
     variables.CLUSTER_STRATEGY = simulation_metrics['strategy']
     variables.EDGE_SERVER_NUMBER = simulation_metrics['num_edge_server']
+    variables.NUM_DC_PER_RING = simulation_metrics.get('number_dc_per_ring', 0)
     variables.TRAFFIC_INTENSITY = simulation_metrics['traffic_intensity']
     variables.SAVE_INDIVIDUAL_LATENCIES = simulation_metrics.get('save_individual_latencies', False)
     variables.LINK_UTILIZATION_ENABLE = simulation_metrics.get('link_utilization_enable', False)
@@ -129,20 +130,6 @@ def save_individual_latencies(sim_results, individual_latencies, individual_late
     
     print(f"Saved {len(individual_latencies)} individual latencies to {filepath}")
     
-    # Also save metadata as CSV for easy inspection
-    csv_filename = f"{strategy}_{num_server}_{intensity}_{link_util}_summary.csv"
-    csv_filepath = os.path.join(individual_latency_dir, csv_filename)
-    
-    with open(csv_filepath, 'w', newline='') as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(['origin_node', 'network_delay', 'total_latency', 'bottleneck'])
-        # Write only first 1000 rows to CSV for inspection (full data in pickle)
-        for i, latency_data in enumerate(individual_latencies):
-            if i >= 1000:  # Limit CSV to first 1000 entries
-                break
-            writer.writerow(latency_data)
-    
-    print(f"Saved summary (first 1000 entries) to {csv_filepath}")
 
 
 def save_single_result(result_tuple):
@@ -161,6 +148,7 @@ def save_single_result(result_tuple):
     # Get the input parameters from the results
     case = sim_results['strategy']
     num_server = sim_results['num_edge_server']
+    num_dc_per_ring = sim_results['number_dc_per_ring']
     intensity = sim_results['traffic_intensity']
     link_util = sim_results['link_utilization']
     
@@ -168,6 +156,7 @@ def save_single_result(result_tuple):
     main_result = {
         'cluster_strategy': case,
         'edge_server_number': num_server,
+        'number_dc_per_ring': num_dc_per_ring,
         'traffic_intensity': intensity,
         'link_utilization': link_util,
         'blocking_percentage': sim_results['blocking_percentage'],
@@ -237,32 +226,18 @@ def save_single_result(result_tuple):
 if __name__ == "__main__":
 
     # Iterative variables
-    cases = ["centralized_cloud", "massive_edge_cloud", "massive_edge"] # Options: "massive_edge_cloud", "centralized_cloud"
+    cases = ["x_per_ring_edge"] # Options: "massive_edge_cloud", "centralized_cloud"
     # intensities = [i / 100000 for i in range(10, 210, 10)] # start=0.00005, stop=0.001, step=0.0001
-    intensities = [0.001, 0.002, 0.003, 0.004, 0.005] # start=0.00005, stop=0.001, step=0.0001
-    # intensities = [0.0003] # start=0.00005, stop=0.001, step=0.0001
-
+    intensities = [0.001, 0.005] # start=0.00005, stop=0.001, step=0.0001
+    # intensities = [0.0001, 0.0002, 0.0003, 0.0004, 0.0005] # start=0.00005, stop=0.001, step=0.0001
+    num_dc_per_ring_options = [2, 3, 4, 5, 6]  # For 'x_per_ring' strategies
     num_edge_servers = [15000]
     link_utilizations = [0.0]  
     # Non-iterative variables
     # --- 1. Generate all simulation tasks ---
     simulation_tasks = []
     for case in cases:
-        if case.startswith("massive_edge"):
-            for num_server in num_edge_servers:
-                for intensity in intensities:
-                    for link_util in link_utilizations:                        
-                        simulation_metrics = {
-                            "strategy": case,
-                            "num_edge_server": num_server,
-                            "traffic_intensity": intensity,
-                            "link_utilization": link_util,
-                            "save_individual_latencies": True,
-                            "link_utilization_enable": True
-                        }
-                        simulation_tasks.append((simulation_metrics,))  # Note the tuple with comma
-        
-        else:  # For "centralized_cloud"
+        if case == "centralized_cloud":
             for intensity in intensities:
                 for link_util in link_utilizations:
                     simulation_metrics = {
@@ -275,6 +250,22 @@ if __name__ == "__main__":
                     }
                     simulation_tasks.append((simulation_metrics,))
 
+        else:
+            for num_server in num_edge_servers:
+                for intensity in intensities:
+                    for link_util in link_utilizations:
+                        for num_dc in num_dc_per_ring_options:                          
+                            simulation_metrics = {
+                                "strategy": case,
+                                "num_edge_server": num_server,
+                                "number_dc_per_ring": num_dc,
+                                "traffic_intensity": intensity,
+                                "link_utilization": link_util,
+                                "save_individual_latencies": True,
+                                "link_utilization_enable": True
+                            }
+                            simulation_tasks.append((simulation_metrics,))  # Note the tuple with comma
+        
     # --- 2. Run simulations in parallel with immediate result saving ---
     num_processes = 5
     print(f"\nStarting {len(simulation_tasks)} simulations on {num_processes} processes...")

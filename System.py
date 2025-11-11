@@ -176,6 +176,7 @@ class System:
                 variables.accepted_request_latencies.append((
                     request.origin_node,
                     request.network_delay,
+                    request.spawn_time,
                     total_latency,
                     request.bottleneck
                 ))
