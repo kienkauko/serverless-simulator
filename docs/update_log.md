@@ -1,5 +1,13 @@
 # Update Log
 
+## Updated 13/11/2025
+**Commit:** []()
+
+### Changes
+
+- Added new DC placement strategy `x_per_ring`. This allows users to place a custom number of DCs per ring topology of network layer 2 and 3 (layer 1 and 0 are not ring, so they won't work). Previously, the `massive` strategies place DCs at every switch node.
+- Added `POPULATION_SCALE` in `variables.py` and in `Topology.py` that allows countries' population to be scaled to the population of a reference country. Currently, when `POPULATION_SCALE_ENABLE` is true, the simulated country's population is scaled to equal Germany population. 
+  
 ## Updated 29/10/2025
 **Commit:** []()
 

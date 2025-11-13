@@ -39,6 +39,8 @@ class Topology:
         # Add DC mapping structure, use only for per_ring strategy!
         self.node_dc_mapping = {}  # Maps node_id -> [list of DC node_ids]
         
+        # variables only to print out
+        self.population = 0
         # Load edge data from JSON (includes both node and link data)
         with open(variables.TOPOLOGY_PATH, 'r') as f:
             edge_data = json.load(f)
@@ -47,6 +49,11 @@ class Topology:
         for node in edge_data.get('nodes', []):
             node_name = node['name']
             node_id = node_name.replace('_R0', '')  # Remove _R0 suffix
+            node_population = node['population']
+            if variables.POPULATION_SCALE_ENABLE:
+                node_population = node_population * (variables.DEU_POPU / variables.POPULATION_MAP[variables.COUNTRY_CODE])
+                if node['level'] == 3:
+                    self.population += node_population
             # Add node to the graph with all attributes
             self.graph.add_node(node_id, 
                                 location=node['location'],
@@ -55,6 +62,9 @@ class Topology:
                                 parent=str(node.get('parent', None)),
                                 nearby_clusters=None)  # Will be updated later if needed
         
+        # Print for debugging
+        if variables.POPULATION_SCALE_ENABLE:
+            print(f"Total scaled population after scaling: {self.population}")
         # Process links from edge.json
         for link in edge_data.get('links', []):
             n1_name = link['n1']
