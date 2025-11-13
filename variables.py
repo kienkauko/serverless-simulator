@@ -1,4 +1,16 @@
 import random
+
+# constants
+DEU_POPU = 83
+AUS_POPU = 27
+VNM_POPU = 100
+
+POPULATION_MAP = {
+    "DEU": DEU_POPU,
+    "AUS": AUS_POPU,
+    "VNM": VNM_POPU
+}
+
 # --- Configuration ---
 RANDOM_SEED = 42
 SIM_TIME = 400  # Simulation time units (e.g., seconds)
@@ -10,13 +22,13 @@ CONTAINER_ASSIGN_RATE = 1000000.0 # Average rate for request assignment (very fa
 
 # Topology configuration
 USE_TOPOLOGY = True  # Enable topology routing
-COUNTRY_CODE = "AUS"  # Country code for topology selection
+COUNTRY_CODE = "VNM"  # Country code for topology selection
 TOPOLOGY_PATH = f"./topology/countries/{COUNTRY_CODE}/result.json"
 # TOPOLOGY_PATH = "./topology/Germany.json"
 # CLUSTER_PATH = "./topology/cluster.json"
 NETWORK_MODEL = "ps" # Options: "ps", "reservation"
 
-CLUSTER_STRATEGY = "x_per_ring_edge"  # Options: "massive_edge", "massive_edge_cloud", "centralized_cloud", "x_per_ring_edge_cloud", "x_per_ring_edge"
+CLUSTER_STRATEGY = "massive_edge"  # Options: "massive_edge", "massive_edge_cloud", "centralized_cloud", "x_per_ring_edge_cloud", "x_per_ring_edge"
 CENTRAL_CLOUD = "central_cloud"  # Central cloud name in the topology
 # CENTRAL_CLOUD_NODE = "12876"  # Central cloud node ID in the topology
 EDGE_SERVER_NUMBER = 15000  # CPU capacity for all MECs
@@ -25,7 +37,6 @@ NUM_DC_PER_RING = 2  # Number of edge DCs per ring (used if strategy is 'x_per_r
 EDGE_SERVER_PROVISION_STRATEGY = "population_weighted"  # Options: "equally", "population_weighted"
 CLOUD_SPAWN_TIME_FACTOR = 0.5  # Cloud spawn time multiplier (faster)
 CLOUD_PROCESSING_TIME_FACTOR = 0.6  # Cloud processing time multiplier (faster)
-
 # Define Ingress nodes for custom ingress defined in define_ingress_nodes() in Topology.py
 INGRESS_MODE = 'country'  # Options: 'country', 'cities'
 EXAMINED_CITIES = {
@@ -36,6 +47,8 @@ EXAMINED_CITIES = {
 # Define utilization for connected links
 BW_POPULATION_SCALE_ENABLE = False
 LINK_UTILIZATION_ENABLE = True  # Enable link utilization adjustments
+POPULATION_SCALE_ENABLE = True # Enable population-based scaling
+
 LINK_UTILIZATION = {
     '3-3': 0.5,
     '3-2': 0.5,
