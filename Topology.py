@@ -58,7 +58,7 @@ class Topology:
             self.graph.add_node(node_id, 
                                 location=node['location'],
                                 level=node['level'],
-                                population=node['population'],
+                                population=node_population,
                                 parent=str(node.get('parent', None)),
                                 nearby_clusters=None)  # Will be updated later if needed
         
@@ -87,7 +87,7 @@ class Topology:
                 combined_level = f"{node1_level}-{node2_level}"
 
                 # Calculate latency based on node locations
-                latency = self.calculate_latency(n1_id, n2_id)
+                latency = self.calculate_prop_delay(n1_id, n2_id)
                 
                 # Get bandwidth from JSON or use default
                 # Current bandwidth is scaled by TRAFFIC_INTENSITY
@@ -190,7 +190,7 @@ class Topology:
         
         return utilization_stats
     
-    def calculate_latency(self, node1, node2):
+    def calculate_prop_delay(self, node1, node2):
         """Calculate latency between two nodes based on their locations in the JSON file."""
         # Get locations in EPSG:3857
         loc1 = self.graph.nodes[node1]['location']
@@ -381,7 +381,7 @@ class Topology:
                         print(f"Error in finding path")
                         exit(1)
          
-    # def get_path_latency(self, path):
+    # def get_path_prop_delay(self, path):
     #     """Calculate the total latency of a path"""
     #     if not path or len(path) < 2:
     #         return 0
@@ -404,7 +404,7 @@ class Topology:
     #     for i in range(len(path)-1):
     #         self.graph[path[i]][path[i+1]]['num_active_flows'] -= 1
     
-    def get_path_transmission_delay(self, path, packet_size):
+    def calculate_trans_delay(self, path, packet_size):
         """
         Calculate the total transmission delay of a path for the PS model.
         This version models pipelining by finding the bottleneck link.
@@ -450,6 +450,23 @@ class Topology:
 
         return total_transmission_delay, bottleneck_level
 
+    def calculate_TCP_overhead(self, prop_delay_ms, packet_size):
+        """
+        Calculate TCP overhead including connection setup, teardown, and slow start delay.
+        """
+        # Calculate RTT in seconds
+        rtt = 2 * prop_delay_ms / 1000  # Convert ms to seconds
+        
+        # Connection setup (3-way handshake) + teardown (simplified to 1 RTT)
+        tcp_connection_overhead = 2 * rtt
+        
+        # Calculate slow start delay
+        IW_bits = 10 * 1460 * 8  # Initial Window: 10 MSS, 1 MSS = 1460 bytes = 11680 bits
+        num_rtts_slow_start = math.ceil(math.log2(packet_size / IW_bits + 1))
+        slow_start_delay = num_rtts_slow_start * rtt
+        
+        return tcp_connection_overhead, slow_start_delay
+
     def update_request_delay(self, request, paths, type='upload'):
         """Calculate propagation and transmission delays for the given paths."""
         if type == 'upload':
@@ -464,23 +481,18 @@ class Topology:
             raise ValueError(f"Unknown delay type: {type}")
         
         # Static propagation delay
-        prop_delay = self.get_path_latency(path_direct)
+        prop_delay = self.get_path_prop_delay(path_direct)
         
-        # Add TCP overhead ONCE per request (not per transmission)
-        rtt = 2 * prop_delay / 1000  # Convert ms to seconds
-        # Connection setup (3-way handshake) + teardown (simplified to 1 RTT)
-        tcp_connection_overhead = 2 * rtt
-        IW_bits = 10 * 1460 * 8  # 1 MSS = 1460 bytes = 11680 bits
-        num_rtts_slow_start = math.ceil(math.log2(packet_size_direct / IW_bits + 1))
-        slow_start_delay = num_rtts_slow_start * rtt
-    
+        # Calculate TCP overhead
+        tcp_connection_overhead, slow_start_delay = self.calculate_TCP_overhead(prop_delay, packet_size_direct)
+
         # Dynamic transmission delay and returns bottleneck info
-        trans_delay_direct, bottleneck_direct = self.get_path_transmission_delay(path_direct, packet_size_direct)
+        trans_delay_direct, bottleneck_direct = self.calculate_trans_delay(path_direct, packet_size_direct)
         trans_delay_indirect, bottleneck_indirect = 0, None
 
         if request.data_path_required:
-            prop_delay += self.get_path_latency(path_indirect)
-            trans_delay_indirect, bottleneck_indirect = self.get_path_transmission_delay(path_indirect, packet_size_indirect)
+            prop_delay += self.get_path_prop_delay(path_indirect)
+            trans_delay_indirect, bottleneck_indirect = self.calculate_trans_delay(path_indirect, packet_size_indirect)
 
         request.prop_delay += (prop_delay / 1000) # Convert ms to seconds
         
@@ -495,7 +507,7 @@ class Topology:
 
         # Calculate total delay for this transmission and yield timeout
         trans_delay = prop_delay / 1000 + tcp_connection_overhead + slow_start_delay \
-                     + trans_delay_direct + trans_delay_indirect
+                    + trans_delay_direct + trans_delay_indirect
         yield self.env.timeout(trans_delay)
 
         # Accumulate delay and save to request log 
@@ -601,7 +613,7 @@ class Topology:
             path = self.find_path(src, edge_node)
             if path:
                 # Calculate total latency for this path
-                total_latency = self.get_path_latency(path)
+                total_latency = self.get_path_prop_delay(path)
                 if total_latency < shortest_latency:
                     shortest_latency = total_latency
                     nearest_cluster = edge
@@ -633,7 +645,7 @@ class Topology:
         self.path_cache[cache_key] = path
     # Add a similar cache for path latency
 
-    def get_path_latency(self, path):
+    def get_path_prop_delay(self, path):
         """Calculate the total latency of a path with caching.
         The cache is bidirectional; latency for a path is the same as for its reverse.
         """
