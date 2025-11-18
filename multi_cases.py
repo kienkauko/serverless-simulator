@@ -148,7 +148,7 @@ def save_single_result(result_tuple):
     # Get the input parameters from the results
     case = sim_results['strategy']
     num_server = sim_results['num_edge_server']
-    num_dc_per_ring = sim_results['number_dc_per_ring']
+    num_dc_per_ring = sim_results.get('number_dc_per_ring', 0)
     intensity = sim_results['traffic_intensity']
     link_util = sim_results['link_utilization']
     
@@ -226,11 +226,11 @@ def save_single_result(result_tuple):
 if __name__ == "__main__":
 
     # Iterative variables
-    cases = ["x_per_ring_edge"] # Options: "massive_edge_cloud", "centralized_cloud"
+    cases = ["centralized_cloud"] # Options: "massive_edge_cloud", "centralized_cloud"
     # intensities = [i / 100000 for i in range(10, 210, 10)] # start=0.00005, stop=0.001, step=0.0001
-    intensities = [0.001, 0.005] # start=0.00005, stop=0.001, step=0.0001
+    intensities = [0.001, 0.002, 0.003, 0.004, 0.005] # start=0.00005, stop=0.001, step=0.0001
     # intensities = [0.0001, 0.0002, 0.0003, 0.0004, 0.0005] # start=0.00005, stop=0.001, step=0.0001
-    num_dc_per_ring_options = [2, 3, 4, 5, 6]  # For 'x_per_ring' strategies
+    num_dc_per_ring_options = [0]  # For 'x_per_ring' strategies
     num_edge_servers = [15000]
     link_utilizations = [0.0]  
     # Non-iterative variables
@@ -245,7 +245,7 @@ if __name__ == "__main__":
                         "num_edge_server": 0,
                         "traffic_intensity": intensity,
                         "link_utilization": link_util,
-                        "save_individual_latencies": True,
+                        "save_individual_latencies": False,
                         "link_utilization_enable": True
                     }
                     simulation_tasks.append((simulation_metrics,))
@@ -278,7 +278,13 @@ if __name__ == "__main__":
         """Callback executed when each simulation completes."""
         completed_count[0] += 1
         print(f"\n[Progress: {completed_count[0]}/{total_count} completed]")
-        save_single_result(result)
+        try:
+            save_single_result(result)
+        except Exception as e:
+            print(f"✗ Error in result_callback while saving: {e}")
+            import traceback
+            traceback.print_exc()
+
     
     def error_callback(error):
         """Callback executed when a simulation fails."""
