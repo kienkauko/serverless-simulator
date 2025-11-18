@@ -3,8 +3,10 @@ import json
 import math
 import random
 from pyproj import Transformer
-from Cluster import Cluster
+from Cluster import Cluster 
+from FlowState import FlowState
 import variables
+import simpy
 
 class Topology:
     def __init__(self, env):
@@ -30,6 +32,10 @@ class Topology:
         # Add a path cache
         self.path_cache = {}  # Format: (src, dst) -> path
         self.path_latency_cache = {}  # Format: (tuple(path)) -> latency
+
+        # Flow registry: track active transmission processes per link
+        # Format: {(node1, node2): [list of FlowState objects]}
+        self.active_flows = {}
 
         # Initialize clusters
         self.clusters = {}
@@ -468,7 +474,10 @@ class Topology:
         return tcp_connection_overhead, slow_start_delay
 
     def update_request_delay(self, request, paths, type='upload'):
-        """Calculate propagation and transmission delays for the given paths."""
+        """
+        Calculate propagation and transmission delays with dynamic bandwidth reallocation.
+        This is an interruptible SimPy process that recalculates delay when other flows start/end.
+        """
         if type == 'upload':
             path_direct, path_indirect = paths[0], paths[1]
             packet_size_direct = request.packet_size_direct_upload
@@ -480,62 +489,207 @@ class Topology:
         else:
             raise ValueError(f"Unknown delay type: {type}")
         
-        # Static propagation delay
+        # Static propagation delay (one-time calculation)
         prop_delay = self.get_path_prop_delay(path_direct)
-        
-        # Calculate TCP overhead
-        tcp_connection_overhead, slow_start_delay = self.calculate_TCP_overhead(prop_delay, packet_size_direct)
-
-        # Dynamic transmission delay and returns bottleneck info
-        trans_delay_direct, bottleneck_direct = self.calculate_trans_delay(path_direct, packet_size_direct)
-        trans_delay_indirect, bottleneck_indirect = 0, None
-
         if request.data_path_required:
             prop_delay += self.get_path_prop_delay(path_indirect)
-            trans_delay_indirect, bottleneck_indirect = self.calculate_trans_delay(path_indirect, packet_size_indirect)
-
-        request.prop_delay += (prop_delay / 1000) # Convert ms to seconds
         
-        # Store bottleneck info on the request
-        max_trans_delay = max(trans_delay_direct, trans_delay_indirect)
-        if max_trans_delay > request.max_trans_delay:
-            request.max_trans_delay = max_trans_delay
-            if max_trans_delay ==  trans_delay_direct:
-                request.bottleneck = bottleneck_direct
-            else:
-                request.bottleneck = bottleneck_indirect
-
-        # Calculate total delay for this transmission and yield timeout
-        trans_delay = prop_delay / 1000 + tcp_connection_overhead + slow_start_delay \
-                    + trans_delay_direct + trans_delay_indirect
-        yield self.env.timeout(trans_delay)
-
-        # Accumulate delay and save to request log 
-        request.network_delay += trans_delay
-
-    def make_paths(self, request, paths):
-        """Implement flow counting for the given paths."""
-        # Implement the direct path
-        if paths[0] and len(paths[0]) >= 2:
-            for i in range(len(paths[0])-1):
-                self.graph[paths[0][i]][paths[0][i+1]]['num_active_flows'] += 1
+        # Calculate TCP overhead (one-time calculation)
+        tcp_connection_overhead, slow_start_delay = self.calculate_TCP_overhead(prop_delay, packet_size_direct)
         
-        # Implement the indirect path if needed
-        if request.data_path_required and paths[1] and len(paths[1]) >= 2:
-            for i in range(len(paths[1])-1):
-                self.graph[paths[1][i]][paths[1][i+1]]['num_active_flows'] += 1
-
-    def remove_paths(self, request, paths):
-        """Release flow for paths"""
-        # Release the direct path
-        if paths[0] and len(paths[0]) >= 2:
-            for i in range(len(paths[0])-1):
-                self.graph[paths[0][i]][paths[0][i+1]]['num_active_flows'] -= 1
+        # Account for propagation and TCP setup delays
+        request.prop_delay += (prop_delay / 1000)  # Convert ms to seconds
         
-        # Release the indirect path if needed
-        if request.data_path_required and paths[1] and len(paths[1]) >= 2:
-            for i in range(len(paths[1])-1):
-                self.graph[paths[1][i]][paths[1][i+1]]['num_active_flows'] -= 1
+        # Get reference to the current process
+        current_process = self.env.active_process
+        
+        # Initialize flow states for transmission
+        flow_direct = FlowState(request, path_direct, packet_size_direct, 'direct', current_process)
+        flow_indirect = FlowState(request, path_indirect, packet_size_indirect, 'indirect', current_process) if request.data_path_required else None
+        
+        # Start transmission timing after propagation and TCP setup
+        transmission_start = self.env.now
+        flow_direct.start_time = transmission_start
+        flow_direct.last_update_time = transmission_start
+        if flow_indirect:
+            flow_indirect.start_time = transmission_start
+            flow_indirect.last_update_time = transmission_start
+        
+        # Register flows with the network
+        self._register_flow(flow_direct)
+        if flow_indirect:
+            self._register_flow(flow_indirect)
+        
+        # Interrupt other flows on shared links
+        self._interrupt_affected_flows(current_process, path_direct)
+        if request.data_path_required:
+            self._interrupt_affected_flows(current_process, path_indirect)
+        
+        # Transmission loop - continues until all data is transmitted
+        while flow_direct.get_remaining_data() > 0 or (flow_indirect and flow_indirect.get_remaining_data() > 0):
+            try:
+                # Calculate expected delay based on current network state
+                trans_delay_direct, bottleneck_direct = self._calculate_flow_delay(flow_direct)
+                trans_delay_indirect, bottleneck_indirect = 0, None
+                
+                if flow_indirect and flow_indirect.get_remaining_data() > 0:
+                    trans_delay_indirect, bottleneck_indirect = self._calculate_flow_delay(flow_indirect)
+                
+                # The transmission time is determined by the slower flow (bottleneck)
+                expected_delay = max(trans_delay_direct, trans_delay_indirect)
+                
+                # Store bottleneck info
+                max_trans_delay = max(trans_delay_direct, trans_delay_indirect)
+                if max_trans_delay > request.max_trans_delay:
+                    request.max_trans_delay = max_trans_delay
+                    request.bottleneck = bottleneck_direct if max_trans_delay == trans_delay_direct else bottleneck_indirect
+                
+                # Wait for the expected transmission time
+                yield self.env.timeout(expected_delay)
+                
+                # If we reach here without interruption, transmission is complete
+                break
+                
+            except simpy.Interrupt:
+                # Another flow started/ended, affecting our bandwidth allocation
+                # Update progress for both flows based on time elapsed
+                current_time = self.env.now
+                
+                # Update direct flow progress
+                if flow_direct.get_remaining_data() > 0:
+                    allocated_bw, _ = self._get_allocated_bandwidth(flow_direct)
+                    flow_direct.update_progress(current_time, allocated_bw)
+                
+                # Update indirect flow progress
+                if flow_indirect and flow_indirect.get_remaining_data() > 0:
+                    allocated_bw, _ = self._get_allocated_bandwidth(flow_indirect)
+                    flow_indirect.update_progress(current_time, allocated_bw)
+                
+                # Loop continues to recalculate delay with new bandwidth allocation
+        
+        # Unregister flows from the network
+        self._unregister_flow(flow_direct)
+        if flow_indirect:
+            self._unregister_flow(flow_indirect)
+        
+        # Interrupt other flows that were sharing our links (their bandwidth just increased)
+        self._interrupt_affected_flows(current_process, path_direct)
+        if request.data_path_required:
+            self._interrupt_affected_flows(current_process, path_indirect)
+        
+        # Calculate total delay including propagation, TCP overhead, and transmission
+        total_delay = (prop_delay / 1000) + tcp_connection_overhead + slow_start_delay + (self.env.now - transmission_start)
+        request.network_delay += total_delay
+
+    def _register_flow(self, flow_state):
+        """Register a flow with all links in its path."""
+        path = flow_state.path
+        if not path or len(path) < 2:
+            return
+        
+        for i in range(len(path) - 1):
+            link = (path[i], path[i+1])
+            if link not in self.active_flows:
+                self.active_flows[link] = []
+            self.active_flows[link].append(flow_state)
+            # Update flow count on the edge
+            self.graph[path[i]][path[i+1]]['num_active_flows'] += 1
+    
+    def _unregister_flow(self, flow_state):
+        """Unregister a flow from all links in its path."""
+        path = flow_state.path
+        if not path or len(path) < 2:
+            return
+        
+        for i in range(len(path) - 1):
+            link = (path[i], path[i+1])
+            if link in self.active_flows:
+                try:
+                    self.active_flows[link].remove(flow_state)
+                    if not self.active_flows[link]:
+                        del self.active_flows[link]
+                except ValueError:
+                    pass  # Flow already removed
+            # Update flow count on the edge
+            self.graph[path[i]][path[i+1]]['num_active_flows'] -= 1
+    
+    def _interrupt_affected_flows(self, current_process, path):
+        """Interrupt all other flows that share links with the given path."""
+        if not path or len(path) < 2:
+            return
+        affected_flows = set()
+        for i in range(len(path) - 1):
+            link = (path[i], path[i+1])
+            if link in self.active_flows:
+                for flow_state in self.active_flows[link]:
+                    # Skip if this is the current process (don't interrupt ourselves!)
+                    if flow_state.process is not None and \
+                       flow_state.process.is_alive and \
+                       flow_state.process != current_process: 
+                        affected_flows.add(flow_state.process)
+        
+        # Interrupt all affected processes (excluding ourselves)
+        for process in affected_flows:
+            process.interrupt()
+    
+    def _get_allocated_bandwidth(self, flow_state):
+        """
+        Calculate the bandwidth allocated to a flow based on fair sharing.
+        Returns tuple: (allocated_bandwidth, bottleneck_level)
+        """
+        path = flow_state.path
+        if not path or len(path) < 2:
+            return float('inf'), None
+        
+        # Find bottleneck: the link with minimum per-flow bandwidth
+        min_bandwidth = float('inf')
+        bottleneck_level = None
+        
+        for i in range(len(path) - 1):
+            edge_data = self.graph.get_edge_data(path[i], path[i+1])
+            link_capacity = edge_data['bandwidth']
+            num_flows = edge_data['num_active_flows']
+            
+            if num_flows > 0:
+                per_flow_bw = link_capacity / num_flows
+                if per_flow_bw < min_bandwidth:
+                    min_bandwidth = per_flow_bw
+                    bottleneck_level = edge_data.get('level', 'unknown')
+        
+        return min_bandwidth, bottleneck_level
+    
+    def _calculate_flow_delay(self, flow_state):
+        """Calculate expected delay for a flow based on current bandwidth allocation."""
+        remaining_data = flow_state.get_remaining_data()
+        if remaining_data <= 0:
+            return 0, None
+        
+        path = flow_state.path
+        if not path or len(path) < 2:
+            return 0.001, None
+        
+        # Get allocated bandwidth and bottleneck info (reuses _get_allocated_bandwidth)
+        allocated_bw, bottleneck_level = self._get_allocated_bandwidth(flow_state)
+        
+        # Calculate expected transmission time
+        if allocated_bw > 0 and allocated_bw != float('inf'):
+            expected_delay = remaining_data / allocated_bw
+        else:
+            expected_delay = float('inf')
+        
+        return expected_delay, bottleneck_level
+
+    # def make_paths(self, request, paths):
+    #     """Implement flow counting for the given paths."""
+    #     # NOTE: Flow registration is now handled automatically in update_request_delay
+    #     # This method is kept for backward compatibility but does nothing
+    #     pass
+
+    # def remove_paths(self, request, paths):
+    #     """Release flow for paths"""
+    #     # NOTE: Flow unregistration is now handled automatically in update_request_delay
+    #     # This method is kept for backward compatibility but does nothing
+    #     pass
 
     def find_cluster(self, request):
         """Find appropriate clusters for request processing

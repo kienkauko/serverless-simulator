@@ -106,19 +106,17 @@ class System:
         # If assignment was successful, process the service
         if assignment_result:
             # Create the first transmission - upload data to container
-            self.topology.make_paths(request, target_clusters[cluster])
+            # Note: make_paths/remove_paths are now handled automatically in update_request_delay
             yield self.env.process(self.topology.update_request_delay(request, \
                                     target_clusters[cluster], type='upload'))
-            self.topology.remove_paths(request, target_clusters[cluster])
 
             # Start processing the request in the container
             yield self.env.process(container.process_request())
 
             # Create the second transmission - download data from container
-            self.topology.make_paths(request, target_clusters[cluster])
+            # Note: make_paths/remove_paths are now handled automatically in update_request_delay
             yield self.env.process(self.topology.update_request_delay(request, \
                                     target_clusters[cluster], type='download'))
-            self.topology.remove_paths(request, target_clusters[cluster])
 
             # Start the idle timeout process 
             container.idle_timeout_process = self.env.process(container.idle_lifecycle())
