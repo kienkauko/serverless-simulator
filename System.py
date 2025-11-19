@@ -50,11 +50,10 @@ class System:
                 # Get node data
                 node_data = self.topology.graph.nodes[node_id]
                 # Only generate requests with node_intensity probability
-                if random.random() * 100 < variables.NODE_INTENSITY:
-                    arrival_rate = round(node_data['population'] * variables.TRAFFIC_INTENSITY)
-                    total_request += arrival_rate
-                    if arrival_rate > 0:
-                        self.env.process(self.app_request_generator(app_id, node_id, arrival_rate))
+                arrival_rate = node_data['population'] * variables.REQ_PER_PERSON
+                total_request += arrival_rate
+                if arrival_rate > 0:
+                    self.env.process(self.app_request_generator(app_id, node_id, arrival_rate))
         print(f"Total expected request arrival rate: {total_request}/time unit.")
 
     def app_request_generator(self, app_id, node_id, arrival_rate):

@@ -40,7 +40,7 @@ def run_single_simulation(simulation_metrics):
     variables.CLUSTER_STRATEGY = simulation_metrics['strategy']
     variables.EDGE_SERVER_NUMBER = simulation_metrics['num_edge_server']
     variables.NUM_DC_PER_RING = simulation_metrics.get('number_dc_per_ring', 0)
-    variables.TRAFFIC_INTENSITY = simulation_metrics['traffic_intensity']
+    variables.REQ_PER_PERSON = simulation_metrics['traffic_intensity']
     variables.SAVE_INDIVIDUAL_LATENCIES = simulation_metrics.get('save_individual_latencies', False)
     variables.LINK_UTILIZATION_ENABLE = simulation_metrics.get('link_utilization_enable', False)
 
@@ -50,7 +50,7 @@ def run_single_simulation(simulation_metrics):
     print("\n" + "="*50)
     print(f"RUNNING SIMULATION: Strategy='{variables.CLUSTER_STRATEGY}', "
           f"Servers={variables.EDGE_SERVER_NUMBER}, "
-          f"Intensity={variables.TRAFFIC_INTENSITY}, "
+          f"Intensity={variables.REQ_PER_PERSON}, "
           f"Link Utilization={simulation_metrics['link_utilization']}")
     print("="*50 + "\n")
 

@@ -15,7 +15,7 @@ class Topology:
         # self.edge_cluster = [cluster for cluster_name, cluster in clusters.items() if cluster_name == "edge"] if clusters else []
         self.network_model = variables.NETWORK_MODEL
         self.bw_factor_enable = variables.BW_POPULATION_SCALE_ENABLE
-        self.bandwidth_factor = variables.TRAFFIC_INTENSITY # Scale following the traffic intensity
+        self.bandwidth_factor = variables.REQ_PER_PERSON # Scale following the traffic intensity
         self.link_util_enable = variables.LINK_UTILIZATION_ENABLE
         self.link_utilization = variables.LINK_UTILIZATION
         print("Country: ", variables.COUNTRY_CODE)
@@ -96,7 +96,7 @@ class Topology:
                 latency = self.calculate_prop_delay(n1_id, n2_id)
                 
                 # Get bandwidth from JSON or use default
-                # Current bandwidth is scaled by TRAFFIC_INTENSITY
+                # Current bandwidth is scaled by REQ_PER_PERSON
                 if self.bw_factor_enable:
                     bandwidth = float(link.get('bandwidth'))*self.bandwidth_factor 
                 else:

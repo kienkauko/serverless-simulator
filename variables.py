@@ -22,7 +22,7 @@ CONTAINER_ASSIGN_RATE = 1000000.0 # Average rate for request assignment (very fa
 
 # Topology configuration
 USE_TOPOLOGY = True  # Enable topology routing
-COUNTRY_CODE = "AUS"  # Country code for topology selection
+COUNTRY_CODE = "DEU"  # Country code for topology selection
 TOPOLOGY_PATH = f"./topology/countries/{COUNTRY_CODE}/result.json"
 # TOPOLOGY_PATH = "./topology/Germany.json"
 # CLUSTER_PATH = "./topology/cluster.json"
@@ -46,7 +46,7 @@ EXAMINED_CITIES = {
 
 # Define utilization for connected links
 BW_POPULATION_SCALE_ENABLE = False
-LINK_UTILIZATION_ENABLE = True  # Enable link utilization adjustments
+LINK_UTILIZATION_ENABLE = False  # Enable link utilization adjustments
 POPULATION_SCALE_ENABLE = False # Enable population-based scaling
 
 LINK_UTILIZATION = {
@@ -70,8 +70,8 @@ LINK_UTILIZATION = {
 # --- Multi-Cluster Configuration ---
 
 # Traffic intensity factor to scale arrival rates based on node population
-TRAFFIC_INTENSITY = 0.001  # Adjust this factor to scale overall traffic, default: 0.0001
-NODE_INTENSITY = 10  # Percentage of level 3 nodes generating traffic (0-100)
+REQ_PER_PERSON = 0.000001  # Adjust this factor to scale overall traffic, default: 0.0001
+# NODE_INTENSITY = 10  # Percentage of level 3 nodes generating traffic (0-100)
 # Application definitions for heterogeneous workloads
 APPLICATIONS = {
     "app1": { # a Tiktok video sent to Cloud for processing (10s)
