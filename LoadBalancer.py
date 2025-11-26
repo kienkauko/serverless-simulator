@@ -90,16 +90,16 @@ class LoadBalancer:
             return random.choice(containers)
         return None
         
-    def handle_request(self, request, viable_clusters):
-        # Handle an incoming request based on the selected strategy.
+    # def handle_request(self, request, viable_clusters):
+    #     # Handle an incoming request based on the selected strategy.
         
-        if self.request_handling_strategy == "greedy":
-            return self._handle_request_greedy(request, viable_clusters)
-        # Add more strategies here as needed
-        else:
-            raise ValueError(f"Unknown request handling strategy: {self.request_handling_strategy}")
+    #     if self.request_handling_strategy == "greedy":
+    #         return self._handle_request_greedy(request, viable_clusters)
+    #     # Add more strategies here as needed
+    #     else:
+    #         raise ValueError(f"Unknown request handling strategy: {self.request_handling_strategy}")
             
-    def _handle_request_greedy(self, request, viable_clusters):
+    def handle_request(self, request, viable_clusters):
         # Try each viable cluster in order (assuming they are already ordered by propagation delay if topology is used)
         # Get the appropriate container pool for this app in the selected cluster
         for cluster in viable_clusters:

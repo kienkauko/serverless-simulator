@@ -13,7 +13,7 @@ POPULATION_MAP = {
 
 # --- Configuration ---
 RANDOM_SEED = 42
-SIM_TIME = 400  # Simulation time units (e.g., seconds)
+SIM_TIME = 200  # Simulation time units (e.g., seconds)
 METRIC_RECORDED_TIME = 0  # Time after which metrics are recorded
 VERBOSE = False  # Set to True to enable detailed logging
 
@@ -27,6 +27,11 @@ TOPOLOGY_PATH = f"./topology/countries/{COUNTRY_CODE}/result.json"
 # TOPOLOGY_PATH = "./topology/Germany.json"
 # CLUSTER_PATH = "./topology/cluster.json"
 NETWORK_MODEL = "ps" # Options: "ps", "reservation"
+
+ # NOTE: the following variables are used for periodic-interruption mechanism
+# used in update_request_delay to reduce runtime
+# Set it to 0 to always interrupt when event occurs
+NETWORK_UPDATE_PERIOD = 0.1  # Time units between interruptions
 
 CLUSTER_STRATEGY = "centralized_cloud"  # Options: "massive_edge", "massive_edge_cloud", "centralized_cloud", "x_per_ring_edge_cloud", "x_per_ring_edge"
 CENTRAL_CLOUD = "central_cloud"  # Central cloud name in the topology
@@ -70,7 +75,7 @@ LINK_UTILIZATION = {
 # --- Multi-Cluster Configuration ---
 
 # Traffic intensity factor to scale arrival rates based on node population
-REQ_PER_PERSON = 0.000001  # Adjust this factor to scale overall traffic, default: 0.0001
+REQ_PER_PERSON = 0.00038  # Adjust this factor to scale overall traffic, default: 0.0001
 # NODE_INTENSITY = 10  # Percentage of level 3 nodes generating traffic (0-100)
 # Application definitions for heterogeneous workloads
 APPLICATIONS = {

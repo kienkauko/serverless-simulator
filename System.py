@@ -179,7 +179,7 @@ class System:
                 ))
             # Update congested path statistics
             if request.bottleneck is not None:
-                variables.congested_paths[request.bottleneck] += 1
+                variables.congested_paths[str(request.bottleneck)] += 1
             # if request.data_path_required and request.bottleneck_indirect is not None:
             #     variables.congested_paths[request.bottleneck_indirect] += 1
 

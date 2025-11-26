@@ -170,6 +170,88 @@ class FirstFitScheduler(Scheduler):
         return stats
 
 
+class NextFitScheduler(Scheduler):
+    """
+    A scheduler that places containers on the next available server starting from
+    the last used server (Next-Fit).
+    
+    This implementation reduces search time compared to First-Fit by avoiding
+    rescanning the beginning of the server list repeatedly.
+    """
+    
+    def __init__(self, env, cluster, idle_timeout_cluster, verbose=False):
+        """
+        Initialize the scheduler.
+        
+        Args:
+            env: SimPy environment
+            cluster: Cluster instance containing servers
+            idle_timeout_cluster: Dict contains idle timeouts for each app
+            verbose: Flag to control logging output
+        """
+        super().__init__(env, cluster, idle_timeout_cluster)
+        self._stats = {
+            'placement_attempts': 0,
+            'placement_successes': 0,
+            'placement_failures': 0,
+            'timeouts_set': 0
+        }
+        self.last_used_index = 0
+    
+    def find_server_for_spawn(self, request):
+        """
+        Find the next server with enough current capacity starting from the last used index.
+        
+        Args:
+            request: The request that needs a container
+            
+        Returns:
+            Server instance or None if no suitable server is found
+        """
+        self._stats['placement_attempts'] += 1
+        num_servers = len(self.cluster.servers)
+        
+        # Start searching from the last used index
+        for i in range(num_servers):
+            idx = (self.last_used_index + i) % num_servers
+            server = self.cluster.servers[idx]
+            
+            if server.has_capacity(request.cpu_demand, request.ram_demand, 
+                                   request.cpu_warm, request.ram_warm):
+                self._stats['placement_successes'] += 1
+                self.last_used_index = idx  # Update the starting point for next time
+                return server
+        
+        self._stats['placement_failures'] += 1
+        return None
+    
+    def calculate_idle_timeout(self, container):
+        """
+        Calculate an exponentially distributed idle timeout.
+        
+        Args:
+            container: The container that has just become idle
+            
+        Returns:
+            float: The timeout value in simulation time units
+        """
+        return random.expovariate(1.0/self.idle_timeout_cluster[container.app_id])
+    
+    def get_stats(self):
+        """
+        Get statistics about the scheduler's performance.
+        
+        Returns:
+            dict: Performance metrics
+        """
+        stats = self._stats.copy()
+        if stats['placement_attempts'] > 0:
+            stats['placement_success_rate'] = stats['placement_successes'] / stats['placement_attempts']
+        else:
+            stats['placement_success_rate'] = 0
+        return stats
+
+
 class BestFitScheduler(Scheduler):
     """
     A scheduler that places containers on the server with the least remaining resources

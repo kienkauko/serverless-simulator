@@ -146,6 +146,9 @@ class Container:
             print(f"FATAL ERROR: {self.env.now:.2f} - {self} released more resources than server capacity (CPU:{self.server.cpu_real:.1f}/{self.server.cpu_capacity:.1f}, RAM:{self.server.ram_real:.1f}/{self.server.ram_capacity:.1f})")
             exit(1)
 
+        # Clear references to help garbage collection
+        self.system = None
+        self.cluster = None
         # self.server.resource_lock.release(lock_request)
 
 

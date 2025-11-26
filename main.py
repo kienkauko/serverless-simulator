@@ -1,11 +1,12 @@
 import simpy
 import random
 import time
+import tracemalloc  # Import the memory tracing library
 
 from System import System
 from variables import *
 from Topology import Topology
-from Scheduler import FirstFitScheduler  # Import our schedulers
+from Scheduler import FirstFitScheduler, NextFitScheduler  # Import our schedulers
 
 # --- Progress Tracking ---
 def track_progress(env, total_time):
@@ -45,7 +46,7 @@ def track_progress(env, total_time):
 # --- Simulation Setup and Run ---
 
 print("--- Simulation Start ---")
-# print(f"Use Topology: {USE_TOPOLOGY}")
+tracemalloc.start()  # Start tracing memory allocations
 print(f"Simulation time is: {SIM_TIME} time units.")
 
 # print("\n--- Cluster Configurations ---")
@@ -76,7 +77,7 @@ env = simpy.Environment()
 topology = Topology(env)
 
 # Select scheduler type - can be changed to BestFitScheduler for a different strategy
-scheduler_class = FirstFitScheduler
+scheduler_class = NextFitScheduler
 # scheduler_class = BestFitScheduler  # Uncomment to use BestFitScheduler instead
 
 # Create System with topology, clusters, and scheduler
@@ -91,6 +92,17 @@ env.run(until=SIM_TIME)
 
 print("-" * 20)
 print(f"--- Simulation End at time {env.now:.2f} ---")
+
+# --- MEMORY PROFILING OUTPUT ---
+print("\n--- Memory Profiling Results ---")
+
+snapshot = tracemalloc.take_snapshot()
+top_stats = snapshot.statistics('lineno')
+
+print("\n[ Top 10 Memory Allocating Lines ]")
+for stat in top_stats[:10]:
+    print(stat)
+
 print("\n--- Overall Simulation Statistics ---")
 
 for key, value in request_stats.items():

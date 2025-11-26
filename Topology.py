@@ -22,6 +22,10 @@ class Topology:
         print(f"Initializing topology with network model: {self.network_model}, "
               f"bandwidth factor enabled: {self.bw_factor_enable}, "
               f"link utilization enabled: {self.link_util_enable}")
+        
+        # Initialize Transformer for later propagation delay calculations
+        self.transformer = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
+
         # Initialize graph
         self.graph = nx.DiGraph()
         self.env = env
@@ -31,11 +35,27 @@ class Topology:
 
         # Add a path cache
         self.path_cache = {}  # Format: (src, dst) -> path
-        self.path_latency_cache = {}  # Format: (tuple(path)) -> latency
+        self.prop_delay_cache = {}  # Format: (tuple(path)) -> prop delay
 
         # Flow registry: track active transmission processes per link
         # Format: {(node1, node2): [list of FlowState objects]}
         self.active_flows = {}
+
+        # Bandwidth registry: store bandwidth for each link
+        # Format: {(node1, node2): bandwidth}
+        self.link_bw_capacity = {}
+
+        # Current allocated bandwidth per flow on each link
+        self.link_allocated_bw = {}
+
+        # Link level registry: store level for each link
+        # Format: {(node1, node2): level}
+        self.link_level = {}
+
+        # NOTE: the following variables are used for periodic-interruption mechanism
+        # used in update_request_delay to reduce runtime
+        self.interruption_period = variables.NETWORK_UPDATE_PERIOD  # Time units between interruptions
+        self.last_interruption_time = 0  # Last time an interruption occurred
 
         # Initialize clusters
         self.clusters = {}
@@ -109,9 +129,12 @@ class Topology:
                 # Add edge to the graph with attributes 
                 self.graph.add_edge(n1_id, n2_id, 
                                        bandwidth=bandwidth, 
-                                       num_active_flows=0, 
                                        latency=latency,
                                        level=combined_level)
+                
+                # Store bandwidth and level in the separate dictionaries
+                self.link_bw_capacity[(n1_id, n2_id)] = bandwidth
+                self.link_level[(n1_id, n2_id)] = combined_level
 
         # Load predefined clusters information from JSON
         for cluster in edge_data['clusters']:
@@ -166,35 +189,35 @@ class Topology:
 
 
         
-    def get_link_utilization(self):
-        """Calculate and return average link utilization statistics grouped by level."""
-        utilization_stats = {}
-        level_edges = {}
+    # def get_link_utilization(self):
+    #     """Calculate and return average link utilization statistics grouped by level."""
+    #     utilization_stats = {}
+    #     level_edges = {}
         
-        # Collect utilization data for each edge grouped by level
-        for n1, n2, data in self.graph.edges(data=True):
-            bandwidth = data.get('bandwidth', 0)
-            available_bw = data.get('available_bandwidth', 0)
-            level = data.get('level', 'unknown')
+    #     # Collect utilization data for each edge grouped by level
+    #     for n1, n2, data in self.graph.edges(data=True):
+    #         bandwidth = data.get('bandwidth', 0)
+    #         available_bw = data.get('available_bandwidth', 0)
+    #         level = data.get('level', 'unknown')
             
-            # Calculate utilization as percentage
-            utilization = ((bandwidth - available_bw) / bandwidth) * 100 
+    #         # Calculate utilization as percentage
+    #         utilization = ((bandwidth - available_bw) / bandwidth) * 100 
             
-            if level not in level_edges:
-                level_edges[level] = {
-                    'count': 0,
-                    'total_utilization': 0
-                }
+    #         if level not in level_edges:
+    #             level_edges[level] = {
+    #                 'count': 0,
+    #                 'total_utilization': 0
+    #             }
             
-            level_edges[level]['count'] += 1
-            level_edges[level]['total_utilization'] += utilization
+    #         level_edges[level]['count'] += 1
+    #         level_edges[level]['total_utilization'] += utilization
         
-        # Calculate average utilization for each level
-        for level, stats in level_edges.items():
-            if stats['count'] > 0:
-                utilization_stats[level] = stats['total_utilization'] / stats['count']
+    #     # Calculate average utilization for each level
+    #     for level, stats in level_edges.items():
+    #         if stats['count'] > 0:
+    #             utilization_stats[level] = stats['total_utilization'] / stats['count']
         
-        return utilization_stats
+    #     return utilization_stats
     
     def calculate_prop_delay(self, node1, node2):
         """Calculate latency between two nodes based on their locations in the JSON file."""
@@ -202,10 +225,9 @@ class Topology:
         loc1 = self.graph.nodes[node1]['location']
         loc2 = self.graph.nodes[node2]['location']
         
-        # Convert from EPSG:3857 to EPSG:4326 (from Web Mercator to standard lon/lat)
-        transformer = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
-        lon1, lat1 = transformer.transform(loc1[0], loc1[1])
-        lon2, lat2 = transformer.transform(loc2[0], loc2[1])
+        # OPTIMIZATION: Use pre-initialized transformer
+        lon1, lat1 = self.transformer.transform(loc1[0], loc1[1])
+        lon2, lat2 = self.transformer.transform(loc2[0], loc2[1])
         
         # Calculate distance using Haversine formula (great-circle distance)
         # Earth radius in kilometers
@@ -230,67 +252,23 @@ class Topology:
         # This gives us 0.005 ms per km (1000/200000)
         latency_ms = distance_km * 0.005
         
-        return latency_ms
-    
-    # def find_path(self, src, dst, required_bw=None):
-    #     """Find shortest path between source and destination nodes."""
-    #     # Convert IDs to strings for consistency
-    #     src = str(src)
-    #     dst = str(dst)
-        
-    #     # If source and destination are the same
-    #     if src == dst:
-    #         return [src]
-        
-    #     # Find the shortest path considering bandwidth if specified
-    #     return self.find_shortest_path(src, dst, required_bw)
-
-        # if path:
-        #     return path
-        # else:
+        return latency_ms/1000  # Convert to seconds
 
     
     def find_possible_path(self, src, dst):
         """Find shortest path between two nodes considering bandwidth if specified."""
-        # try:
-        # if required_bw is None:
-        #     # Use simple shortest path when bandwidth is not a constraint
-        #     path = nx.shortest_path(self.graph, src, dst, weight='latency')
-        #     return path
-        
-        # Find paths ordered by latency
-        # paths = list(nx.shortest_simple_paths(self.graph, src, dst, weight='latency'))
         path = self.get_cached_path(src, dst)
         if not path:
             path = self.find_hierachical_path(src, dst)
             
-        
-        # Check bandwidth constraints if path exists
         if path:
             self.save_cached_path(src, dst, path)
-            # if self.network_model == 'reservation':
-            #     for i in range(len(path)-1):
-            #         edge = self.graph.get_edge_data(path[i], path[i+1])
-            #         if edge['available_bandwidth'] < required_bw:
-            #             # Record the level of the failed link
-            #             level = edge.get('level', 'unknown')
-            #             if level not in failed_links_by_level:
-            #                 failed_links_by_level[level] = 0
-            #             failed_links_by_level[level] += 1
-            #             return False, None, failed_links_by_level
-            #     return True, path, failed_links_by_level
-            # elif self.network_model == 'ps':
-                # In PS model, we don't reject based on bandwidth.
             return True, path
         
-        # if failed_links_by_level.empty():
-        #     return True, None, failed_links_by_level
         else:
             return False, None
             
-        # except nx.NetworkXNoPath:
-        #     return False, None, failed_links_by_level
-
+    
     def find_hierachical_path(self, src, dst):
         # Case: src and dst are at different levels
         src_level = self.graph.nodes[src]['level']
@@ -304,10 +282,6 @@ class Topology:
             node_b = dst if node_a == src else src
 
             node_a_parent = self.graph.nodes[src]['parent']
-            # node_b_parent = self.graph.nodes[node_b].get('parent', None)
-
-            # node_a_parent_level = self.graph.nodes[node_a_parent]['level'] 
-            # node_b_parent_level = self.graph.nodes[node_b_parent]['level']
 
             path = [node_a]
             
@@ -387,81 +361,14 @@ class Topology:
                         print(f"Error in finding path")
                         exit(1)
          
-    # def get_path_prop_delay(self, path):
-    #     """Calculate the total latency of a path"""
-    #     if not path or len(path) < 2:
-    #         return 0
-            
-    #     total_latency = sum(self.graph.get_edge_data(path[i], path[i+1])['latency'] 
-    #                         for i in range(len(path)-1))
-    #     return total_latency
     
-    # def implement_path(self, path):
-    #     """Reserve bandwidth along a path or increment flow count."""
-    #     if not path or len(path) < 2:
-    #         return
-    #     for i in range(len(path)-1):
-    #         self.graph[path[i]][path[i+1]]['num_active_flows'] += 1
 
-    # def release_path(self, path):
-    #     """Release bandwidth along a path or decrement flow count."""
-    #     if not path or len(path) < 2:
-    #         return
-    #     for i in range(len(path)-1):
-    #         self.graph[path[i]][path[i+1]]['num_active_flows'] -= 1
-    
-    def calculate_trans_delay(self, path, packet_size):
-        """
-        Calculate the total transmission delay of a path for the PS model.
-        This version models pipelining by finding the bottleneck link.
-        The total delay is determined by the slowest link in the path.
-        Returns a tuple: (total_transmission_delay, bottleneck_level, delay_by_level).
-        """
-        if not path or len(path) < 2 or packet_size is None:
-            return 0.001, None # Assume we have 1ms delay for directly connected path
-        
-        bottleneck_bandwidth = float('inf')
-        bottleneck_level = None
-        # delay_by_level = {} # This will represent the delay contribution if this level were the bottleneck
-
-        # First, find the bottleneck bandwidth for the new flow along the path
-        for i in range(len(path) - 1):
-            edge_data = self.graph.get_edge_data(path[i], path[i+1])
-            link_capacity = edge_data['bandwidth']
-            # Add 1 to num_flows to account for the current request
-            num_flows = edge_data['num_active_flows'] + 1
-            
-            flow_bandwidth = link_capacity / num_flows
-            
-            if flow_bandwidth < bottleneck_bandwidth:
-                bottleneck_bandwidth = flow_bandwidth
-                bottleneck_level = edge_data.get('level', 'unknown')
-
-        # Calculate total transmission delay based on the single bottleneck link
-        if bottleneck_bandwidth > 0:
-            total_transmission_delay = packet_size / bottleneck_bandwidth
-        else:
-            total_transmission_delay = float('inf')
-
-        # For logging/analysis, we can still calculate what the delay would be per level
-        # Note: This is for analysis only, these delays are not summed.
-        # for i in range(len(path) - 1):
-        #     edge_data = self.graph.get_edge_data(path[i], path[i+1])
-        #     link_capacity = edge_data['bandwidth']
-        #     num_flows = edge_data['num_active_flows'] + 1
-        #     flow_bandwidth = link_capacity / num_flows
-        #     link_delay = packet_size / flow_bandwidth
-        #     level = edge_data.get('level', 'unknown')
-            # delay_by_level[level] = delay_by_level.get(level, 0) + link_delay
-
-        return total_transmission_delay, bottleneck_level
-
-    def calculate_TCP_overhead(self, prop_delay_ms, packet_size):
+    def calculate_TCP_overhead(self, prop_delay, packet_size):
         """
         Calculate TCP overhead including connection setup, teardown, and slow start delay.
         """
         # Calculate RTT in seconds
-        rtt = 2 * prop_delay_ms / 1000  # Convert ms to seconds
+        rtt = 2 * prop_delay
         
         # Connection setup (3-way handshake) + teardown (simplified to 1 RTT)
         tcp_connection_overhead = 2 * rtt
@@ -489,6 +396,14 @@ class Topology:
         else:
             raise ValueError(f"Unknown delay type: {type}")
         
+        # Early return if path is too short
+        if not path_direct or len(path_direct) < 2:
+            # Only calculate TCP overhead, no propagation or transmission delay
+            tcp_connection_overhead, slow_start_delay = self.calculate_TCP_overhead(0, packet_size_direct)
+            total_delay = tcp_connection_overhead + slow_start_delay
+            request.network_delay += total_delay
+            return
+        
         # Static propagation delay (one-time calculation)
         prop_delay = self.get_path_prop_delay(path_direct)
         if request.data_path_required:
@@ -498,51 +413,67 @@ class Topology:
         tcp_connection_overhead, slow_start_delay = self.calculate_TCP_overhead(prop_delay, packet_size_direct)
         
         # Account for propagation and TCP setup delays
-        request.prop_delay += (prop_delay / 1000)  # Convert ms to seconds
+        request.prop_delay += prop_delay  # Convert ms to seconds
         
         # Get reference to the current process
         current_process = self.env.active_process
         
         # Initialize flow states for transmission
         flow_direct = FlowState(request, path_direct, packet_size_direct, 'direct', current_process)
-        flow_indirect = FlowState(request, path_indirect, packet_size_indirect, 'indirect', current_process) if request.data_path_required else None
+        if request.data_path_required:
+            flow_indirect = FlowState(request, path_indirect, packet_size_indirect, 'indirect', current_process)
         
         # Start transmission timing after propagation and TCP setup
         transmission_start = self.env.now
         flow_direct.start_time = transmission_start
         flow_direct.last_update_time = transmission_start
-        if flow_indirect:
-            flow_indirect.start_time = transmission_start
-            flow_indirect.last_update_time = transmission_start
-        
+
         # Register flows with the network
         self._register_flow(flow_direct)
-        if flow_indirect:
-            self._register_flow(flow_indirect)
-        
+
+         # Get first time allocated bandwidth and bottleneck info
+        # self._update_allocated_bandwidth(flow_direct)
+
         # Interrupt other flows on shared links
-        self._interrupt_affected_flows(current_process, path_direct)
+
+        # NOTE: The following interruption per period is done to reduce the runtime, it
+        # decrease the accuracy inproportinal to the set period.
+        # PLEASE USE WITH CAUTION!
+        if transmission_start - self.last_interruption_time >= self.interruption_period:
+            self._interrupt_affected_flows(current_process, path_direct)
+            self.last_interruption_time = transmission_start
+
         if request.data_path_required:
+            flow_indirect.start_time = transmission_start
+            flow_indirect.last_update_time = transmission_start
+            self._register_flow(flow_indirect)
             self._interrupt_affected_flows(current_process, path_indirect)
-        
+
         # Transmission loop - continues until all data is transmitted
-        while flow_direct.get_remaining_data() > 0 or (flow_indirect and flow_indirect.get_remaining_data() > 0):
+        while flow_direct.data_remaining > 0 or (flow_indirect and flow_indirect.data_remaining > 0):
             try:
+                # Update allocated bandwidth
+                self._update_allocated_bandwidth(flow_direct)
+
                 # Calculate expected delay based on current network state
-                trans_delay_direct, bottleneck_direct = self._calculate_flow_delay(flow_direct)
-                trans_delay_indirect, bottleneck_indirect = 0, None
+                trans_delay_direct =  flow_direct.data_remaining / flow_direct.min_bandwidth
+                # bottleneck_direct = flow_direct.bottleneck_level
                 
-                if flow_indirect and flow_indirect.get_remaining_data() > 0:
-                    trans_delay_indirect, bottleneck_indirect = self._calculate_flow_delay(flow_indirect)
-                
+                if request.data_path_required:
+                    trans_delay_indirect = flow_indirect.data_remaining / flow_indirect.min_bandwidth
+                    # bottleneck_indirect = flow_indirect.bottleneck_level
+                else:
+                    trans_delay_indirect = 0
+
                 # The transmission time is determined by the slower flow (bottleneck)
                 expected_delay = max(trans_delay_direct, trans_delay_indirect)
                 
-                # Store bottleneck info
-                max_trans_delay = max(trans_delay_direct, trans_delay_indirect)
-                if max_trans_delay > request.max_trans_delay:
-                    request.max_trans_delay = max_trans_delay
-                    request.bottleneck = bottleneck_direct if max_trans_delay == trans_delay_direct else bottleneck_indirect
+                # NOTE: Store bottleneck info, assume that we only care about the first bottleneck encountered
+                # max_trans_delay = expected_delay
+                # if max_trans_delay > request.max_trans_delay:
+                    # request.max_trans_delay = max_trans_delay
+                # if request.bottleneck is None:
+                #     request.bottleneck = bottleneck_direct if expected_delay == trans_delay_direct else bottleneck_indirect
                 
                 # Wait for the expected transmission time
                 yield self.env.timeout(expected_delay)
@@ -556,140 +487,174 @@ class Topology:
                 current_time = self.env.now
                 
                 # Update direct flow progress
-                if flow_direct.get_remaining_data() > 0:
-                    allocated_bw, _ = self._get_allocated_bandwidth(flow_direct)
-                    flow_direct.update_progress(current_time, allocated_bw)
+                # if flow_direct.get_remaining_data() > 0:
+                # allocated_bw, _ = self._get_allocated_bandwidth(flow_direct)
+                flow_direct.update_progress(current_time)
                 
                 # Update indirect flow progress
-                if flow_indirect and flow_indirect.get_remaining_data() > 0:
-                    allocated_bw, _ = self._get_allocated_bandwidth(flow_indirect)
-                    flow_indirect.update_progress(current_time, allocated_bw)
+                if request.data_path_required:
+                    # allocated_bw, _ = self._get_allocated_bandwidth(flow_indirect)
+                    flow_indirect.update_progress(current_time)
                 
                 # Loop continues to recalculate delay with new bandwidth allocation
         
         # Unregister flows from the network
-        self._unregister_flow(flow_direct)
-        if flow_indirect:
-            self._unregister_flow(flow_indirect)
-        
+        self._unregister_flow(flow_direct)        
         # Interrupt other flows that were sharing our links (their bandwidth just increased)
-        self._interrupt_affected_flows(current_process, path_direct)
+         # NOTE: The following interruption per period is done to reduce the runtime, it
+        # decrease the accuracy inproportinal to the set period.
+        # PLEASE USE WITH CAUTION!
+        end_time = self.env.now
+        if end_time - self.last_interruption_time >= self.interruption_period:
+            self._interrupt_affected_flows(current_process, path_direct)
+            self.last_interruption_time = end_time
+
         if request.data_path_required:
+            self._unregister_flow(flow_indirect)
             self._interrupt_affected_flows(current_process, path_indirect)
         
         # Calculate total delay including propagation, TCP overhead, and transmission
-        total_delay = (prop_delay / 1000) + tcp_connection_overhead + slow_start_delay + (self.env.now - transmission_start)
+        total_delay = prop_delay + tcp_connection_overhead + slow_start_delay + (self.env.now - transmission_start)
         request.network_delay += total_delay
+        
+        # NOTE: We assume to save bottleneck of the first connection only, result returning
+        # connection's bottleneck isn't recorded (assummingly it's very small)
+        if request.bottleneck is None:
+            request.bottleneck = flow_direct.bottleneck_level
 
     def _register_flow(self, flow_state):
         """Register a flow with all links in its path."""
         path = flow_state.path
-        if not path or len(path) < 2:
-            return
         
         for i in range(len(path) - 1):
             link = (path[i], path[i+1])
             if link not in self.active_flows:
-                self.active_flows[link] = []
-            self.active_flows[link].append(flow_state)
-            # Update flow count on the edge
-            self.graph[path[i]][path[i+1]]['num_active_flows'] += 1
-    
+                self.active_flows[link] = set() # OPTIMIZATION: Use set instead of list
+            self.active_flows[link].add(flow_state) # OPTIMIZATION: Use add instead of append
+
+            # Update cached bandwidth for this link
+            self.link_allocated_bw[link] = self.link_bw_capacity[link] / len(self.active_flows[link])
+
     def _unregister_flow(self, flow_state):
         """Unregister a flow from all links in its path."""
         path = flow_state.path
-        if not path or len(path) < 2:
-            return
         
         for i in range(len(path) - 1):
             link = (path[i], path[i+1])
-            if link in self.active_flows:
-                try:
-                    self.active_flows[link].remove(flow_state)
-                    if not self.active_flows[link]:
-                        del self.active_flows[link]
-                except ValueError:
-                    pass  # Flow already removed
-            # Update flow count on the edge
-            self.graph[path[i]][path[i+1]]['num_active_flows'] -= 1
-    
+            # OPTIMIZATION: Removal is now O(1) instead of O(N)
+            if link in self.active_flows and flow_state in self.active_flows[link]:
+                self.active_flows[link].remove(flow_state)
+
+            # Update cached bandwidth for this link
+            count = len(self.active_flows[link])
+            if count > 0:
+                self.link_allocated_bw[link] = self.link_bw_capacity[link] / count
+            else:
+                self.link_allocated_bw[link] = self.link_bw_capacity[link]
+                
     def _interrupt_affected_flows(self, current_process, path):
-        """Interrupt all other flows that share links with the given path."""
-        if not path or len(path) < 2:
-            return
+        """Interrupt only selected flows that share links with the given path and got it min_bandwidth changed."""
+        # path = current_flow.path
         affected_flows = set()
         for i in range(len(path) - 1):
             link = (path[i], path[i+1])
             if link in self.active_flows:
+                # Calculate new bandwidth for this link immediately
+                # link_capacity = self.link_bw_capacity[link]
+                # num_flows = len(self.active_flows[link])
+                new_link_bw = self.link_allocated_bw[link]
+
                 for flow_state in self.active_flows[link]:
                     # Skip if this is the current process (don't interrupt ourselves!)
-                    if flow_state.process is not None and \
-                       flow_state.process.is_alive and \
-                       flow_state.process != current_process: 
-                        affected_flows.add(flow_state.process)
+                    if flow_state.process != current_process and \
+                       flow_state.process not in affected_flows: 
+                        
+                        # Innitalize decision flag
+                        should_interrupt = False
+                    
+                        # Case 1: Bandwidth decreased (new flow joined)
+                        # If the new link bandwidth is tighter than the flow's current bottleneck,
+                        # it becomes the new bottleneck. We MUST interrupt.
+                        if new_link_bw < flow_state.min_bandwidth:
+                            should_interrupt = True
+                            
+                            
+                        # Case 2: Bandwidth increased (e.g., flow left) or stayed high
+                        # If the new bandwidth is higher than the current bottleneck,
+                        # we only need to interrupt if this link WAS the bottleneck.
+                        elif new_link_bw > flow_state.min_bandwidth:
+                            # If link matches, it's this was the bottleneck
+                            if flow_state.bottleneck_exact_link == link:
+                                should_interrupt = True
+                            # Else: This link is a "fat pipe" that got even fatter. No impact on flow.
+
+                        if should_interrupt:
+                            affected_flows.add(flow_state.process)
+                            # Update the flow's new bandwidth info now for saving computing power
+                            # flow_state.min_bandwidth = new_link_bw
+                            # flow_state.bottleneck_exact_link == link
+                            # Track which links caused this flow to be interrupted
+                            # flow_state.changed_links.append(link)
         
         # Interrupt all affected processes (excluding ourselves)
         for process in affected_flows:
             process.interrupt()
     
-    def _get_allocated_bandwidth(self, flow_state):
+    def _update_allocated_bandwidth(self, flow_state):
         """
         Calculate the bandwidth allocated to a flow based on fair sharing.
+        Only recalculates for changed links to optimize performance.
         Returns tuple: (allocated_bandwidth, bottleneck_level)
         """
         path = flow_state.path
-        if not path or len(path) < 2:
-            return float('inf'), None
+        # if not path or len(path) < 2:
+        #     return float('inf'), None
         
-        # Find bottleneck: the link with minimum per-flow bandwidth
-        min_bandwidth = float('inf')
-        bottleneck_level = None
+        # If new flow, calculate min_bandwidth across all links
+        if not flow_state.min_bandwidth:
+            flow_state.min_bandwidth = float('inf')
+            for i in range(len(path) - 1):
+                link = (path[i], path[i+1])
+                # link_capacity = self.link_bw_capacity[link]
+                # num_flows = len(self.active_flows[link])
+                
+                per_flow_bw = self.link_allocated_bw[link]
+                if per_flow_bw < flow_state.min_bandwidth:
+                    flow_state.min_bandwidth = per_flow_bw
+                    # NOTE: we save only bottleckneck_level first time (this is an assumption)
+                    # but  bottleneck_exact_link is changed dynamically
+                    flow_state.bottleneck_level = self.link_level[link]
+                    flow_state.bottleneck_exact_link = link
         
         for i in range(len(path) - 1):
-            edge_data = self.graph.get_edge_data(path[i], path[i+1])
-            link_capacity = edge_data['bandwidth']
-            num_flows = edge_data['num_active_flows']
+            link = (path[i], path[i+1])    
+            # link_capacity = self.link_bw_capacity[link]
+            # num_flows = len(self.active_flows[link])
             
-            if num_flows > 0:
-                per_flow_bw = link_capacity / num_flows
-                if per_flow_bw < min_bandwidth:
-                    min_bandwidth = per_flow_bw
-                    bottleneck_level = edge_data.get('level', 'unknown')
+            per_flow_bw = self.link_allocated_bw[link]
+            # Update if we found a smaller bandwidth
+            if per_flow_bw < flow_state.min_bandwidth:
+                flow_state.min_bandwidth = per_flow_bw
+                flow_state.bottleneck_exact_link = link
+                # flow_state.bottleneck_level = self.link_level[link]
         
-        return min_bandwidth, bottleneck_level
+        # # Clear changed links after processing
+        # flow_state.changed_links.clear()
+        
+        # return flow_state.min_bandwidth, flow_state.bottleneck_level
     
-    def _calculate_flow_delay(self, flow_state):
-        """Calculate expected delay for a flow based on current bandwidth allocation."""
-        remaining_data = flow_state.get_remaining_data()
-        if remaining_data <= 0:
-            return 0, None
+    # def _calculate_flow_delay(self, flow_state):
+    #     """Calculate expected delay for a flow based on current bandwidth allocation."""
+    #     # path = flow_state.path
         
-        path = flow_state.path
-        if not path or len(path) < 2:
-            return 0.001, None
+    #     # Get allocated bandwidth and bottleneck info (reuses _get_allocated_bandwidth)
+    #     allocated_bw, bottleneck_level = self._get_allocated_bandwidth(flow_state)
         
-        # Get allocated bandwidth and bottleneck info (reuses _get_allocated_bandwidth)
-        allocated_bw, bottleneck_level = self._get_allocated_bandwidth(flow_state)
+    #     # Calculate expected transmission time
+    #     expected_delay = flow_state.data_remaining / allocated_bw
         
-        # Calculate expected transmission time
-        if allocated_bw > 0 and allocated_bw != float('inf'):
-            expected_delay = remaining_data / allocated_bw
-        else:
-            expected_delay = float('inf')
-        
-        return expected_delay, bottleneck_level
+    #     return expected_delay, bottleneck_level
 
-    # def make_paths(self, request, paths):
-    #     """Implement flow counting for the given paths."""
-    #     # NOTE: Flow registration is now handled automatically in update_request_delay
-    #     # This method is kept for backward compatibility but does nothing
-    #     pass
-
-    # def remove_paths(self, request, paths):
-    #     """Release flow for paths"""
-    #     # NOTE: Flow unregistration is now handled automatically in update_request_delay
-    #     # This method is kept for backward compatibility but does nothing
-    #     pass
 
     def find_cluster(self, request):
         """Find appropriate clusters for request processing
@@ -815,15 +780,15 @@ class Topology:
             path_key = tuple(reversed(path))
         
         # Check if latency is cached using the canonical key
-        if path_key in self.path_latency_cache:
-            return self.path_latency_cache[path_key]
+        if path_key in self.prop_delay_cache:
+            return self.prop_delay_cache[path_key]
         
         # Else: Calculate latency for the original path direction
         total_latency = sum(self.graph.get_edge_data(path[i], path[i+1])['latency'] 
                            for i in range(len(path)-1))
         
         # Cache the result using the canonical key
-        self.path_latency_cache[path_key] = total_latency
+        self.prop_delay_cache[path_key] = total_latency
         return total_latency
     
     def get_nearby(self, type, node, level=None):
