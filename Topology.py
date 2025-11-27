@@ -412,6 +412,9 @@ class Topology:
         # Calculate TCP overhead (one-time calculation)
         tcp_connection_overhead, slow_start_delay = self.calculate_TCP_overhead(prop_delay, packet_size_direct)
         
+        pre_transmission_delay = prop_delay + tcp_connection_overhead + slow_start_delay
+        yield self.env.timeout(pre_transmission_delay)
+
         # Account for propagation and TCP setup delays
         request.prop_delay += prop_delay  # Convert ms to seconds
         
@@ -479,6 +482,7 @@ class Topology:
                 yield self.env.timeout(expected_delay)
                 
                 # If we reach here without interruption, transmission is complete
+                flow_direct.data_remaining = 0
                 break
                 
             except simpy.Interrupt:
@@ -514,7 +518,7 @@ class Topology:
             self._interrupt_affected_flows(current_process, path_indirect)
         
         # Calculate total delay including propagation, TCP overhead, and transmission
-        total_delay = prop_delay + tcp_connection_overhead + slow_start_delay + (self.env.now - transmission_start)
+        total_delay = pre_transmission_delay + (self.env.now - transmission_start)
         request.network_delay += total_delay
         
         # NOTE: We assume to save bottleneck of the first connection only, result returning
@@ -625,18 +629,22 @@ class Topology:
                     # but  bottleneck_exact_link is changed dynamically
                     flow_state.bottleneck_level = self.link_level[link]
                     flow_state.bottleneck_exact_link = link
-        
-        for i in range(len(path) - 1):
-            link = (path[i], path[i+1])    
-            # link_capacity = self.link_bw_capacity[link]
-            # num_flows = len(self.active_flows[link])
-            
-            per_flow_bw = self.link_allocated_bw[link]
-            # Update if we found a smaller bandwidth
-            if per_flow_bw < flow_state.min_bandwidth:
-                flow_state.min_bandwidth = per_flow_bw
-                flow_state.bottleneck_exact_link = link
-                # flow_state.bottleneck_level = self.link_level[link]
+        # Existing flow, only recalculate if any link changed
+        else:
+            # reset min_bandwidth to find new bottleneck
+            flow_state.min_bandwidth = float('inf')
+
+            for i in range(len(path) - 1):
+                link = (path[i], path[i+1])    
+                # link_capacity = self.link_bw_capacity[link]
+                # num_flows = len(self.active_flows[link])
+                
+                per_flow_bw = self.link_allocated_bw[link]
+                # Update if we found a smaller bandwidth
+                if per_flow_bw < flow_state.min_bandwidth:
+                    flow_state.min_bandwidth = per_flow_bw
+                    flow_state.bottleneck_exact_link = link
+                    # flow_state.bottleneck_level = self.link_level[link]
         
         # # Clear changed links after processing
         # flow_state.changed_links.clear()

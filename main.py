@@ -1,7 +1,7 @@
 import simpy
 import random
 import time
-import tracemalloc  # Import the memory tracing library
+# import tracemalloc  # Import the memory tracing library
 
 from System import System
 from variables import *
@@ -46,7 +46,7 @@ def track_progress(env, total_time):
 # --- Simulation Setup and Run ---
 
 print("--- Simulation Start ---")
-tracemalloc.start()  # Start tracing memory allocations
+# tracemalloc.start()  # Start tracing memory allocations
 print(f"Simulation time is: {SIM_TIME} time units.")
 
 # print("\n--- Cluster Configurations ---")
@@ -94,14 +94,14 @@ print("-" * 20)
 print(f"--- Simulation End at time {env.now:.2f} ---")
 
 # --- MEMORY PROFILING OUTPUT ---
-print("\n--- Memory Profiling Results ---")
+# print("\n--- Memory Profiling Results ---")
 
-snapshot = tracemalloc.take_snapshot()
-top_stats = snapshot.statistics('lineno')
+# snapshot = tracemalloc.take_snapshot()
+# top_stats = snapshot.statistics('lineno')
 
-print("\n[ Top 10 Memory Allocating Lines ]")
-for stat in top_stats[:10]:
-    print(stat)
+# print("\n[ Top 10 Memory Allocating Lines ]")
+# for stat in top_stats[:10]:
+#     print(stat)
 
 print("\n--- Overall Simulation Statistics ---")
 
