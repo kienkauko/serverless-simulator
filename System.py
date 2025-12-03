@@ -1,7 +1,8 @@
 import simpy
-import math
 import random
 import itertools
+import pandas as pd
+import os
 import variables
 from Request import Request
 from Scheduler import FirstFitScheduler  # Import our new scheduler
@@ -11,11 +12,12 @@ from LoadBalancer import LoadBalancer  # Import our new LoadBalancer
 
 class System:
     """Orchestrates the simulation, managing servers, requests, and containers."""
-    def __init__(self, env, topology, scheduler_class=FirstFitScheduler):
+    def __init__(self, env, topology, scheduler_class=FirstFitScheduler, trace_path=None):
         self.env = env
         self.topology = topology  # New: topology instance
         self.clusters = topology.clusters  # Dictionary of {cluster_name: cluster_instance}
         self.req_id_counter = itertools.count()
+        self.trace_path = trace_path
         # self.verbose = verbose  # Flag to control logging output
         
         # generate idle timeout for applications
@@ -46,6 +48,9 @@ class System:
         # node_intensity is a percentage (0-100) that determines which level 3 nodes generate requests
         total_request = 0
         for app_id in variables.APPLICATIONS:
+            # Calculate log-normal pre-metrics for app spawn time in variables.py
+            variables.app_log_normal_metrics(app_id)
+
             for node_id in self.topology.ingress_nodes:
                 # Get node data
                 node_data = self.topology.graph.nodes[node_id]
@@ -58,8 +63,7 @@ class System:
 
     def app_request_generator(self, app_id, node_id, arrival_rate):
         """Generates requests for a specific application according to its Poisson process."""
-        app_config = variables.APPLICATIONS[app_id]
-        data_location = app_config["data_location"]
+        # data_location = app_config["data_location"]
         # No defined period, keep generating until simulation time ends
         while True:
             # Time between arrivals (Exponential distribution for Poisson process)
@@ -71,10 +75,10 @@ class System:
             arrival_time = self.env.now
             
             # Generate resource demands for this app
-            resource_demand = variables.generate_app_demands(app_id)
+            request_info = variables.generate_req_info(app_id)
             
             # Generate the request
-            request = Request(req_id, arrival_time, resource_demand, node_id, data_node = data_location, app_id=app_id)
+            request = Request(req_id, arrival_time, request_info, node_id, app_id)
             
             # Update statistics
             self.update_start_statistics(request)
@@ -172,11 +176,17 @@ class System:
             if variables.SAVE_INDIVIDUAL_LATENCIES:
                 variables.accepted_request_latencies.append((
                     request.origin_node,
+                    request.arrival_time,
                     request.network_delay,
                     request.spawn_time,
                     total_latency,
                     request.bottleneck
                 ))
+                
+                # Flush to parquet if buffer is full (1 million records)
+                if len(variables.accepted_request_latencies) >= 1000000:
+                    self.flush_latencies()
+
             # Update congested path statistics
             if request.bottleneck is not None:
                 variables.congested_paths[str(request.bottleneck)] += 1
@@ -198,5 +208,25 @@ class System:
             # app_latency_stats[request.app_id]['processing_time'] += request.processing_time
             # app_latency_stats[request.app_id]['waiting_time'] += request.waiting_time  # Add app-specific waiting time
             # app_latency_stats[request.app_id]['count'] += 1
+
+    def flush_latencies(self):
+        """Writes buffered latencies to the parquet file and clears the buffer."""
+        columns = ['origin_node', 'arrival_time', 'network_delay', 'spawn_time', 'total_latency', 'bottleneck']
+        df = pd.DataFrame(variables.accepted_request_latencies, columns=columns)
+        
+        try:
+            # Use fastparquet for appending if possible
+            if not os.path.exists(self.trace_path):
+                df.to_parquet(self.trace_path, engine='fastparquet', index=False)
+            else:
+                df.to_parquet(self.trace_path, engine='fastparquet', append=True, index=False)
+            
+            print(f"Flushed {len(df)} records to {self.trace_path}")
+            variables.accepted_request_latencies.clear()
+            
+        except Exception as e:
+            print(f"Error flushing latencies to parquet: {e}")
+            # If fastparquet is missing or fails, we might want to try pyarrow with a different strategy
+            # or just print the error. For now, we print the error.
 
 

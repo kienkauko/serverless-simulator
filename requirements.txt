@@ -21,3 +21,6 @@ filelock>=3.0.0
 
 # Excel file handling
 openpyxl>=3.0.0
+
+# Parquet file handling
+fastparquet>=2024.11.0

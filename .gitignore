@@ -4,6 +4,8 @@ figures/AUS/
 figures/VNM/
 figures/VNM_level2/
 figures/old_results/
+figures/new/
 # Ignore Kien.zip file
 topology/Kien.zip
-
+output.prof
+visual_topo.py

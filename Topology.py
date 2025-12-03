@@ -876,15 +876,12 @@ class Topology:
         for i, node_name in enumerate(level_nodes):
             num_servers = servers_per_cluster + (1 if i < remaining_servers else 0)
             cluster_name = f"edge-{node_name}"
-            config = {
+            config = variables.INTEL_NUC.copy()
+            config.update({
                 "name": cluster_name,
                 "node": node_name,
                 "num_servers": num_servers,
-                "server_cpu": 100.0,
-                "server_ram": 100.0,
-                "power_max": 60,
-                "power_min": 10
-            }
+            })
             edge_clusters[cluster_name] = Cluster(self.env, config)
         
         return edge_clusters
@@ -916,15 +913,12 @@ class Topology:
         for node_name, num_servers in allocated_servers.items():
             if num_servers > 0:
                 cluster_name = f"edge-{node_name}"
-                config = {
+                config = variables.INTEL_NUC.copy()
+                config.update({
                     "name": cluster_name,
                     "node": node_name,
                     "num_servers": num_servers,
-                    "server_cpu": 100.0,
-                    "server_ram": 100.0,
-                    "power_max": 60,
-                    "power_min": 10
-                }
+                })
                 edge_clusters[cluster_name] = Cluster(self.env, config)
         
         return edge_clusters
@@ -1000,15 +994,12 @@ class Topology:
                 
                 if num_servers > 0:
                     cluster_name = f"edge-{node_name}"
-                    config = {
+                    config = variables.INTEL_NUC.copy()
+                    config.update({
                         "name": cluster_name,
                         "node": node_name,
                         "num_servers": num_servers,
-                        "server_cpu": 100.0,
-                        "server_ram": 100.0,
-                        "power_max": 60,
-                        "power_min": 10
-                    }
+                    })
                     edge_clusters[cluster_name] = Cluster(self.env, config)
         
         # === Build node_dc_mapping based on level ===

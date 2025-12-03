@@ -86,22 +86,18 @@ class Server:
             
             # Release the lock after allocation
             # self.resource_lock.release(lock_request)
-
-            # Determine spawn time based on app type and cluster type
-            base_spawn_time = variables.APPLICATIONS[request.app_id]["base_spawn_time"]
             
             # Apply the cluster-specific spawn time factor
-            spawn_time_mean = base_spawn_time * self.cluster.spawn_time_factor
+            spawn_time = request.expected_spawn_time * self.cluster.spawn_time_factor
             
-            # Resources acquired, now wait for spawn time, which is exponential distributed
-            spawn_time_real = random.expovariate(1.0/spawn_time_mean)
+            # spawn_time_real = random.expovariate(1.0/spawn_time_mean)
             if variables.VERBOSE:
                 print(f"{self.env.now:.2f} - Spawning container on {self.cluster.name} cluster")
-                print(f"{self.env.now:.2f} - Waiting {spawn_time_real:.2f} time units for container to spawn...")
-            yield self.env.timeout(spawn_time_real)
+                print(f"{self.env.now:.2f} - Waiting {spawn_time:.2f} time units for container to spawn...")
+            yield self.env.timeout(spawn_time)
 
             # Record the spawn time for latency calculation
-            request.spawn_time = spawn_time_real
+            request.spawn_time = spawn_time
             request.assigned_cluster = self.cluster.name
             # Spawning complete, create the container object with app_id and cluster
             container = Container(self.env, system, self.cluster, self, request)

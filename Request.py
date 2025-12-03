@@ -1,20 +1,22 @@
 class Request:
     """Represents a request arriving at the system."""
-    def __init__(self, req_id, arrival_time, resource_demand, origin_node=None, data_node=None, app_id=None):
+    def __init__(self, req_id, arrival_time, config, origin_node=None, app_id=None):
         self.id = req_id
         self.arrival_time = arrival_time
-        self.cpu_warm = resource_demand["cpu_warm"]
-        self.ram_warm = resource_demand["ram_warm"]
-        self.cpu_demand = resource_demand["cpu_demand"]
-        self.ram_demand = resource_demand["ram_demand"]
-        # self.bandwidth_direct = resource_demand["bandwidth_direct"] # bw from user
-        # self.bandwidth_indirect = resource_demand["bandwidth_indirect"] # bw from data 
-        self.packet_size_direct_upload = resource_demand["packet_size_direct_upload"] # in bits, default to 1500 bytes (MTU)
-        self.packet_size_direct_download = resource_demand["packet_size_direct_download"] # in bits, default to 1500 bytes (MTU)
-        self.packet_size_indirect_upload = resource_demand["packet_size_indirect_upload"] # in bits, default to 1500 bytes (MTU)
-        self.packet_size_indirect_download = resource_demand["packet_size_indirect_download"] # in bits, default to 1500 bytes (MTU)
-        self.data_path_required = resource_demand["data_path_required"]  # Whether data path is required
-        self.data_node = data_node
+        self.cpu_warm = config["cpu_warm"]
+        self.ram_warm = config["ram_warm"]
+        self.cpu_demand = config["cpu_demand"]
+        self.ram_demand = config["ram_demand"]
+        # self.bandwidth_direct = config["bandwidth_direct"] # bw from user
+        # self.bandwidth_indirect = config["bandwidth_indirect"] # bw from data 
+        self.packet_size_direct_upload = config["packet_size_direct_upload"] # in bits, default to 1500 bytes (MTU)
+        self.packet_size_direct_download = config["packet_size_direct_download"] # in bits, default to 1500 bytes (MTU)
+        self.packet_size_indirect_upload = config["packet_size_indirect_upload"] # in bits, default to 1500 bytes (MTU)
+        self.packet_size_indirect_download = config["packet_size_indirect_download"] # in bits, default to 1500 bytes (MTU)
+        self.data_path_required = config["data_path_required"]  # Whether data path is required
+        self.expected_spawn_time = config["spawn_time"]
+        self.expected_service_time = config["service_time"]
+        self.data_node = config["data_location"]
         self.start_service_time = -1 # Mark when service starts
         self.end_service_time = -1   # Mark when service ends
         self.origin_node = origin_node  # New: the topology node from which the request is sent

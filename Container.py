@@ -174,14 +174,14 @@ class Container:
             print(f"{self.env.now:.2f} - {self.current_request} state changed to Running")
 
         # Determine service rate based on app type
-        service_rate = variables.APPLICATIONS[self.current_request.app_id]["service_rate"]
-            
-        self.current_request.processing_time = random.expovariate(service_rate)*self.cluster.processing_time_factor
+        # service_rate = variables.APPLICATIONS[self.current_request.app_id]["service_rate"]
+        service_time = self.current_request.expected_service_time*self.cluster.processing_time_factor    
+        self.current_request.processing_time = service_time
         # self.current_request.processing_time = service_time  # Track processing time for this request
         # service_time = self.current_request.processing_time + self.current_request.network_delay
         if variables.VERBOSE:
             print(f"{self.env.now:.2f} - {self.current_request} starting service in {self}.")
-        yield self.env.timeout(self.current_request.processing_time)
+        yield self.env.timeout(service_time)
         if variables.VERBOSE:
             print(f"{self.env.now:.2f} - {self.current_request} completed service time.")
 

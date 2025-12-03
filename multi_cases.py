@@ -4,18 +4,14 @@ import simpy
 import random
 import pandas as pd
 import multiprocessing
-import pickle
 import filelock
-
-# We need to be able to modify variables and re-run the simulation.
-# We will import the modules we need to modify/reset.
 import variables
 import System
 import Topology
 import Scheduler
 
 # --- Excel Setup ---
-output_dir = './figures/{}'.format(variables.COUNTRY_CODE)
+output_dir = './figures/new/{}'.format(variables.COUNTRY_CODE)
 average_results_dir = os.path.join(output_dir, 'average_results')
 individual_latency_dir = os.path.join(output_dir, 'individual_latency')
 
@@ -27,36 +23,51 @@ os.makedirs(individual_latency_dir, exist_ok=True)
 # Define keys for congestion results
 congestion_keys = ['3-3', '3-2', '2-2', '2-1', '1-1', '1-0', '0-0']
 
+class SimulationConfig:
+    """Helper class to manage simulation configuration and file paths."""
+    def __init__(self, metrics):
+        self.strategy = metrics['strategy']
+        self.num_server = metrics['num_edge_server']
+        self.intensity = metrics['traffic_intensity']
+        self.link_util = metrics['link_utilization']
+        self.num_dc_per_ring = metrics.get('number_dc_per_ring', 0)
+        self.save_latencies = metrics.get('save_individual_latencies', False)
+        self.link_util_enable = metrics.get('link_utilization_enable', False)
+        self.metrics = metrics
+
+    def apply_to_variables(self):
+        """Apply configuration to the global variables module."""
+        variables.CLUSTER_STRATEGY = self.strategy
+        variables.EDGE_SERVER_NUMBER = self.num_server
+        variables.NUM_DC_PER_RING = self.num_dc_per_ring
+        variables.REQ_PER_PERSON = self.intensity
+        variables.SAVE_INDIVIDUAL_LATENCIES = self.save_latencies
+        variables.LINK_UTILIZATION_ENABLE = self.link_util_enable
+        
+        for key in variables.LINK_UTILIZATION:
+            variables.LINK_UTILIZATION[key] = self.link_util
+
+    def get_parquet_path(self):
+        """Generate the path for the parquet file."""
+        filename = f"{self.strategy}_{self.num_server}_{self.intensity}_{self.link_util}.parquet"
+        return os.path.join(individual_latency_dir, filename)
+
+    def __str__(self):
+        return (f"Strategy='{self.strategy}', Servers={self.num_server}, "
+                f"Intensity={self.intensity}, Link Utilization={self.link_util}")
 
 def run_single_simulation(simulation_metrics):
     """
     Runs a single simulation with the given parameters and returns the results.
-    This function re-initializes the simulation environment based on main.py logic.
-    
-    Args:
-        simulation_metrics: Dictionary containing 'strategy', 'num_edge_server', 'traffic_intensity'
     """
-    # Set the parameters from the dictionary
-    variables.CLUSTER_STRATEGY = simulation_metrics['strategy']
-    variables.EDGE_SERVER_NUMBER = simulation_metrics['num_edge_server']
-    variables.NUM_DC_PER_RING = simulation_metrics.get('number_dc_per_ring', 0)
-    variables.REQ_PER_PERSON = simulation_metrics['traffic_intensity']
-    variables.SAVE_INDIVIDUAL_LATENCIES = simulation_metrics.get('save_individual_latencies', False)
-    variables.LINK_UTILIZATION_ENABLE = simulation_metrics.get('link_utilization_enable', False)
-
-    for key in variables.LINK_UTILIZATION:
-        variables.LINK_UTILIZATION[key] = simulation_metrics['link_utilization']
+    config = SimulationConfig(simulation_metrics)
+    config.apply_to_variables()
 
     print("\n" + "="*50)
-    print(f"RUNNING SIMULATION: Strategy='{variables.CLUSTER_STRATEGY}', "
-          f"Servers={variables.EDGE_SERVER_NUMBER}, "
-          f"Intensity={variables.REQ_PER_PERSON}, "
-          f"Link Utilization={simulation_metrics['link_utilization']}")
+    print(f"RUNNING SIMULATION: {config}")
     print("="*50 + "\n")
 
-    # --- 1. Set simulation parameters ---
-    
-    # Reset statistics dictionaries for a clean run by setting all values to 0
+    # --- 1. Reset statistics ---
     for key in variables.request_stats:
         variables.request_stats[key] = 0
     for key in variables.latency_stats:
@@ -65,22 +76,28 @@ def run_single_simulation(simulation_metrics):
         variables.congested_paths[key] = 0
     variables.accepted_request_latencies = [] 
     
-    # --- 2. Setup and Run Simulation (adapted from main.py) ---
+    # --- 2. Setup and Run Simulation ---
     random.seed(variables.RANDOM_SEED)
     env = simpy.Environment()
 
+    parquet_filepath = config.get_parquet_path()
+
     topology = Topology.Topology(env)
     scheduler_class = Scheduler.FirstFitScheduler
-    system = System.System(env, topology, scheduler_class=scheduler_class)
+    # Pass the parquet file path to System so it can log requests periodically
+    system = System.System(env, topology, scheduler_class=scheduler_class, trace_path=parquet_filepath)
 
     system.request_generator()
     
     env.run(until=variables.SIM_TIME)
+    
+    # Flush any remaining latencies
+    if variables.SAVE_INDIVIDUAL_LATENCIES:
+        system.flush_latencies()
 
-    # --- 3. Collect Average Results (adapted from main.py) ---
+    # --- 3. Collect Average Results ---
     simulation_metrics.update(variables.log_ave_result())
-    individual_latencies = variables.accepted_request_latencies
-
+    
     # Calculate mean power, RAM, and CPU
     energy = 0
     ram_time = 0
@@ -100,65 +117,52 @@ def run_single_simulation(simulation_metrics):
     for key, value in simulation_metrics.items():
         print(f"{key}: {value}")
     
-    return simulation_metrics, individual_latencies
+    return simulation_metrics
 
 
-def save_individual_latencies(sim_results, individual_latencies, individual_latency_dir):
-    """
-    Save individual latencies to a file if SAVE_INDIVIDUAL_LATENCIES is True.
+# def save_individual_latencies(sim_results, individual_latencies, individual_latency_dir):
+#     """
+#     Save individual latencies to a file if SAVE_INDIVIDUAL_LATENCIES is True.
     
-    Args:
-        sim_results: Dictionary containing simulation parameters and results
-        individual_latencies: List of tuples (origin_node, network_delay, total_latency, bottleneck)
-        individual_latency_dir: Directory to save the file
-    """
-    if not individual_latencies:
-        return
+#     Args:
+#         sim_results: Dictionary containing simulation parameters and results
+#         individual_latencies: List of tuples (origin_node, network_delay, total_latency, bottleneck)
+#         individual_latency_dir: Directory to save the file
+#     """
+#     if not individual_latencies:
+#         return
     
-    # Create filename from simulation parameters
-    strategy = sim_results['strategy']
-    num_server = sim_results['num_edge_server']
-    intensity = sim_results['traffic_intensity']
-    link_util = sim_results['link_utilization']
+#     # Create filename from simulation parameters
+#     strategy = sim_results['strategy']
+#     num_server = sim_results['num_edge_server']
+#     intensity = sim_results['traffic_intensity']
+#     link_util = sim_results['link_utilization']
     
-    filename = f"{strategy}_{num_server}_{intensity}_{link_util}.pkl"
-    filepath = os.path.join(individual_latency_dir, filename)
+#     filename = f"{strategy}_{num_server}_{intensity}_{link_util}.pkl"
+#     filepath = os.path.join(individual_latency_dir, filename)
     
-    # Save as pickle for efficient storage and fast loading
-    with open(filepath, 'wb') as f:
-        pickle.dump(individual_latencies, f)
+#     # Save as pickle for efficient storage and fast loading
+#     with open(filepath, 'wb') as f:
+#         pickle.dump(individual_latencies, f)
     
-    print(f"Saved {len(individual_latencies)} individual latencies to {filepath}")
+#     print(f"Saved {len(individual_latencies)} individual latencies to {filepath}")
     
 
 
-def save_single_result(result_tuple):
+def save_single_result(sim_results):
     """
     Callback function to save results immediately when a simulation finishes.
-    This function is called by the multiprocessing pool as soon as each task completes.
-    
-    Args:
-        result_tuple: Tuple of (sim_results, individual_latencies) from run_single_simulation
     """
-    sim_results, individual_latencies = result_tuple
-    
-    # Save individual latencies immediately
-    save_individual_latencies(sim_results, individual_latencies, individual_latency_dir)
-    
-    # Get the input parameters from the results
-    case = sim_results['strategy']
-    num_server = sim_results['num_edge_server']
-    num_dc_per_ring = sim_results.get('number_dc_per_ring', 0)
-    intensity = sim_results['traffic_intensity']
-    link_util = sim_results['link_utilization']
+    # Use the config helper to extract parameters easily
+    config = SimulationConfig(sim_results)
     
     # Prepare main results row
     main_result = {
-        'cluster_strategy': case,
-        'edge_server_number': num_server,
-        'number_dc_per_ring': num_dc_per_ring,
-        'traffic_intensity': intensity,
-        'link_utilization': link_util,
+        'cluster_strategy': config.strategy,
+        'edge_server_number': config.num_server,
+        'number_dc_per_ring': config.num_dc_per_ring,
+        'traffic_intensity': config.intensity,
+        'link_utilization': config.link_util,
         'blocking_percentage': sim_results['blocking_percentage'],
         'accepted_requests': sim_results['accepted_requests'],
         'avg_offloaded_to_cloud': sim_results['avg_offloaded_to_cloud'],
@@ -173,10 +177,10 @@ def save_single_result(result_tuple):
     
     # Prepare congestion results row
     congestion_result = {
-        'cluster_strategy': case,
-        'edge_server_number': num_server,
-        'traffic_intensity': intensity,
-        'link_utilization': link_util
+        'cluster_strategy': config.strategy,
+        'edge_server_number': config.num_server,
+        'traffic_intensity': config.intensity,
+        'link_utilization': config.link_util
     }
     for key in congestion_keys:
         congestion_result[key] = sim_results['congested_paths'].get(key, 0)
@@ -213,13 +217,13 @@ def save_single_result(result_tuple):
                 main_df.to_excel(writer, sheet_name='Main_Results', index=False)
                 congestion_df.to_excel(writer, sheet_name='Congestion_Results', index=False)
             
-            print(f"✓ Saved results to {excel_file_path} (Strategy: {case}, Intensity: {intensity})")
+            print(f"✓ Saved results to {excel_file_path} (Strategy: {config.strategy}, Intensity: {config.intensity})")
     
     except filelock.Timeout:
         print(f"✗ Timeout waiting for file lock on {excel_file_path}. Skipping save for this result.")
     
-    # Return a minimal summary to keep in memory (optional, for final reporting)
-    return {'strategy': case, 'intensity': intensity, 'status': 'completed'}
+    # Return a minimal summary
+    return {'strategy': config.strategy, 'intensity': config.intensity, 'status': 'completed'}
 
 
 # --- Main Loop for Multiple Cases ---
@@ -228,7 +232,7 @@ if __name__ == "__main__":
     # Iterative variables
     cases = ["centralized_cloud"] # Options: "massive_edge_cloud", "centralized_cloud"
     # intensities = [i / 100000 for i in range(10, 210, 10)] # start=0.00005, stop=0.001, step=0.0001
-    intensities = [0.001, 0.002, 0.003, 0.004, 0.005] # start=0.00005, stop=0.001, step=0.0001
+    intensities = [0.00005] # start=0.00005, stop=0.001, step=0.0001
     # intensities = [0.0001, 0.0002, 0.0003, 0.0004, 0.0005] # start=0.00005, stop=0.001, step=0.0001
     num_dc_per_ring_options = [0]  # For 'x_per_ring' strategies
     num_edge_servers = [15000]
@@ -245,7 +249,7 @@ if __name__ == "__main__":
                         "num_edge_server": 0,
                         "traffic_intensity": intensity,
                         "link_utilization": link_util,
-                        "save_individual_latencies": False,
+                        "save_individual_latencies": True,
                         "link_utilization_enable": True
                     }
                     simulation_tasks.append((simulation_metrics,))

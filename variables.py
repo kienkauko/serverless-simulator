@@ -1,15 +1,27 @@
 import random
+import math
+# constants and templates
 
-# constants
 DEU_POPU = 83
 AUS_POPU = 27
 VNM_POPU = 100
+ONE_MB = 8388608  # in bits
 
 POPULATION_MAP = {
     "DEU": DEU_POPU,
     "AUS": AUS_POPU,
     "VNM": VNM_POPU
 }
+
+INTEL_NUC = { # Intel Core i5-10210U
+    "server_cpu": 100.0,
+    "server_ram": 100.0,
+    "power_max": 60,
+    "power_min": 10,
+    "spawn_time_factor": 1.0,
+    "processing_time_factor": 1.0
+}
+
 
 # --- Configuration ---
 RANDOM_SEED = 42
@@ -31,7 +43,7 @@ NETWORK_MODEL = "ps" # Options: "ps", "reservation"
  # NOTE: the following variables are used for periodic-interruption mechanism
 # used in update_request_delay to reduce runtime
 # Set it to 0 to always interrupt when event occurs
-NETWORK_UPDATE_PERIOD = 0.001  # Time units between interruptions
+NETWORK_UPDATE_PERIOD = 0  # Time units between interruptions
 
 CLUSTER_STRATEGY = "centralized_cloud"  # Options: "massive_edge", "massive_edge_cloud", "centralized_cloud", "x_per_ring_edge_cloud", "x_per_ring_edge"
 CENTRAL_CLOUD = "central_cloud"  # Central cloud name in the topology
@@ -39,7 +51,7 @@ CENTRAL_CLOUD = "central_cloud"  # Central cloud name in the topology
 EDGE_SERVER_NUMBER = 15000  # CPU capacity for all MECs
 EDGE_DC_LEVEL = 1
 NUM_DC_PER_RING = 2  # Number of edge DCs per ring (used if strategy is 'x_per_ring')
-EDGE_SERVER_PROVISION_STRATEGY = "population_weighted"  # Options: "equally", "population_weighted"
+EDGE_SERVER_PROVISION_STRATEGY = "equally"  # Options: "equally", "population_weighted"
 CLOUD_SPAWN_TIME_FACTOR = 0.5  # Cloud spawn time multiplier (faster)
 CLOUD_PROCESSING_TIME_FACTOR = 0.6  # Cloud processing time multiplier (faster)
 # Define Ingress nodes for custom ingress defined in define_ingress_nodes() in Topology.py
@@ -75,30 +87,39 @@ LINK_UTILIZATION = {
 # --- Multi-Cluster Configuration ---
 
 # Traffic intensity factor to scale arrival rates based on node population
-REQ_PER_PERSON = 0.00045  # Adjust this factor to scale overall traffic, default: 0.0001
+REQ_PER_PERSON = 0.00005  # Adjust this factor to scale overall traffic, default: 0.0001
 # NODE_INTENSITY = 10  # Percentage of level 3 nodes generating traffic (0-100)
 # Application definitions for heterogeneous workloads
 APPLICATIONS = {
     "app1": { # a Tiktok video sent to Cloud for processing (10s)
-        # "arrival_rate": 50.0,  # Requests per time unit
-        "service_rate": 1/5.0,  # To compute processing time only, process may take 5s
-        "base_spawn_time": 5.0,  # Base time units to spawn a container (modified by cluster factor)
+        # NOTE: spawn time follows Log-normal distribution with mean defined below
+        "mean_spawn_time": 10.0,  # Base time units to spawn a container (modified by cluster factor)
+        "std_spawn_time": 1.0,  # Standard deviation of spawn time
+
+        # NOTE: for resource consumption, if min != max, an error will be raised since old containers
+        # cannot be reused if resource demands vary
+        # NOTE: resource consumption is considerred for edge device
         "min_warm_cpu": 0.5,  # Minimum CPU for warm container
         "max_warm_cpu": 0.5,  # Maximum CPU for warm container
-        "min_warm_ram": 5.0,  # Minimum RAM for warm container
-        "max_warm_ram": 5.0, # Maximum RAM for warm container
-        "min_req_cpu": 20.0,  # Minimum CPU demand for request
-        "max_req_cpu": 20.0,  # Maximum CPU demand for request
-        "min_req_ram": 7.0,  # Minimum RAM demand for request
-        "max_req_ram": 7.0,  # Maximum RAM demand for request
-        # "bandwidth_direct": 40000000,  # Bandwidth demand for this application: bit per second
-        # "bandwidth_indirect": 1000000,  # Bandwidth demand for this application: bit per second
-        "data_location": "12876",  # Location of data for this application - Cloud node
-        "packet_size_direct_upload": 163886080,  # in bits, default to 10 MB
+        "min_warm_ram": 15.0,  # Minimum RAM for warm container
+        "max_warm_ram": 15.0, # Maximum RAM for warm container
+        "min_req_cpu": 25.0,  # Minimum CPU demand for request
+        "max_req_cpu": 25.0,  # Maximum CPU demand for request 
+        "min_req_ram": 20.0,  # Minimum RAM demand for request
+        "max_req_ram": 20.0,  # Maximum RAM demand for request
+
+        # NOTE: data sizes also follows log-normal distribution
+        "mean_packet_size_direct_upload": 83886080,  # in bits, 10 MB
+        "std_packet_size_direct_upload": 41943040,  # in bits, 5 MB
+        "min_packet_size_direct_upload": 8388608,  # in bits, 1 MB
+        "max_packet_size_direct_upload": 419430400,  # in bits, 50 MB
         "packet_size_direct_download": 81920,  # in bits, default to 10 KB
+
+        # NOTE: indirect data path (e.g., data fetched from another node), for this app it is not used
         "data_path_required": False,  # Whether data path is required
         "packet_size_indirect_upload": 0,  # in bits, default to 10 MB
         "packet_size_indirect_download": 0,  # in bits, default to 10 MB
+        "data_location": "12876",  # Location of data for this application - Cloud node
     },
     # "app2": {
     #     "arrival_rate": 30.0,
@@ -134,7 +155,7 @@ APPLICATIONS = {
     # }
 }
 
-UNIVERSAL_TIMEOUT = 2  # Time to live for idle function - warm time
+UNIVERSAL_TIMEOUT = 30  # Time to live for idle function - warm time
 
 # Statistics
 request_stats = {
@@ -196,14 +217,7 @@ for app_id in APPLICATIONS:
         'container_spawns_succeeded': 0,
         'containers_reused': 0,
         'containers_removed_idle': 0,
-        'reuse_oom_failures': 0,
-        'bocked_no_path_level_3-3': 0, # No path between level 3 nodes
-        'bocked_no_path_level_3-2': 0, # No path between level 3 and level 2 nodes
-        'bocked_no_path_level_2-2': 0, # No path between level 2 nodes
-        'bocked_no_path_level_2-1': 0, # No path between level 2 and level 1 nodes
-        'bocked_no_path_level_1-1': 0, # No path between level 1 nodes
-        'bocked_no_path_level_1-0': 0, # No path between level 1 and level 0 nodes
-        'bocked_no_path_level_0-0': 0, # No path between level 0 nodes
+        'reuse_oom_failures': 0
     }
 
 # Cluster-specific statistics
@@ -268,33 +282,70 @@ for app_id in APPLICATIONS:
 
 #     return generated_resource
 
-def generate_app_demands(app_id):
+# These are used for the log-normal distribution for spawn time, since it's static values, we put it outside the function
+# Generate spawn time following Log-normal distribution
+app_spawn_time_metrics = {}
+app_upload_size_metrics = {}
+
+def app_log_normal_metrics(app_id):
+    """Calculate mu and sigma for log-normal distribution of spawn time."""
+    app_config = APPLICATIONS[app_id]
+
+    m = app_config["mean_spawn_time"]
+    s = app_config["std_spawn_time"]
+
+    phi = math.sqrt(s**2 + m**2)
+    mu = math.log(m**2 / phi)
+    sigma = math.sqrt(math.log(phi**2 / m**2))
+
+    app_spawn_time_metrics[app_id] = {"mu": mu, "sigma": sigma}
+
+    """Calculate mu and sigma for log-normal distribution of upload size."""
+
+    m_data = app_config["mean_packet_size_direct_upload"]
+    s_data = app_config["std_packet_size_direct_upload"]
+
+    phi_data = math.sqrt(s_data**2 + m_data**2)
+    mu_data = math.log(m_data**2 / phi_data)
+    sigma_data = math.sqrt(math.log(phi_data**2 / m_data**2))
+
+    app_upload_size_metrics[app_id] = {"mu": mu_data, "sigma": sigma_data}
+
+def generate_req_info(app_id):
     """Generate CPU and RAM demands for a specific application."""
     app_config = APPLICATIONS[app_id]
     
     # Generate warm resource demands
-    # cpu_warm = app_config["min_warm_cpu"] if app_config["min_warm_cpu"] == app_config["max_warm_cpu"] else random.uniform(app_config["min_warm_cpu"], app_config["max_warm_cpu"])
-    # ram_warm = app_config["min_warm_ram"] if app_config["min_warm_ram"] == app_config["max_warm_ram"] else random.uniform(app_config["min_warm_ram"], app_config["max_warm_ram"])
+    cpu_warm = app_config["min_warm_cpu"] if app_config["min_warm_cpu"] == app_config["max_warm_cpu"] else random.uniform(app_config["min_warm_cpu"], app_config["max_warm_cpu"])
+    ram_warm = app_config["min_warm_ram"] if app_config["min_warm_ram"] == app_config["max_warm_ram"] else random.uniform(app_config["min_warm_ram"], app_config["max_warm_ram"])
     
-    # # Generate request resource demands
-    # cpu_demand = max(cpu_warm, app_config["min_req_cpu"] if app_config["min_req_cpu"] == app_config["max_req_cpu"] else random.uniform(app_config["min_req_cpu"], app_config["max_req_cpu"]))
-    # ram_demand = max(ram_warm, app_config["min_req_ram"] if app_config["min_req_ram"] == app_config["max_req_ram"] else random.uniform(app_config["min_req_ram"], app_config["max_req_ram"]))
-    
-    # bandwidth_direct = app_config["bandwidth_direct"]
-    # bandwidth_indirect = app_config["bandwidth_indirect"]
+    # Generate request resource demands
+    cpu_demand = max(cpu_warm, app_config["min_req_cpu"] if app_config["min_req_cpu"] == app_config["max_req_cpu"] else random.uniform(app_config["min_req_cpu"], app_config["max_req_cpu"]))
+    ram_demand = max(ram_warm, app_config["min_req_ram"] if app_config["min_req_ram"] == app_config["max_req_ram"] else random.uniform(app_config["min_req_ram"], app_config["max_req_ram"]))
+
+    # Generate packet sizes
+    packet_size_direct_upload = random.lognormvariate(app_upload_size_metrics[app_id]["mu"], app_upload_size_metrics[app_id]["sigma"])
+    packet_size_direct_upload = max(app_config["min_packet_size_direct_upload"], min(packet_size_direct_upload, app_config["max_packet_size_direct_upload"]))
+
+
+    # Generate spawn time following Log-normal distribution
+    spawn_time = random.lognormvariate(app_spawn_time_metrics[app_id]["mu"], app_spawn_time_metrics[app_id]["sigma"])
+
+
 
     generated_resource = {
-        "cpu_warm": app_config["min_warm_cpu"],
-        "ram_warm": app_config["min_warm_ram"],
-        "cpu_demand": app_config["min_req_cpu"],
-        "ram_demand": app_config["min_req_ram"],
-        # "bandwidth_direct": app_config["bandwidth_direct"],
-        # "bandwidth_indirect": app_config["bandwidth_indirect"],
-        "packet_size_direct_upload": app_config["packet_size_direct_upload"],
+        "service_time": packet_size_direct_upload / ONE_MB,  # Simplified service time based on upload size
+        "cpu_warm": cpu_warm,
+        "ram_warm": ram_warm,
+        "cpu_demand": cpu_demand,
+        "ram_demand": ram_demand,
+        "packet_size_direct_upload": packet_size_direct_upload,
+        "spawn_time": spawn_time,
         "packet_size_direct_download": app_config["packet_size_direct_download"],
         "packet_size_indirect_upload": app_config["packet_size_indirect_upload"],
         "packet_size_indirect_download": app_config["packet_size_indirect_download"],
         "data_path_required": app_config["data_path_required"],
+        "data_location": app_config["data_location"]
 
     }
 
