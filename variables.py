@@ -22,45 +22,48 @@ INTEL_NUC = { # Intel Core i5-10210U
     "processing_time_factor": 1.0
 }
 
+PC = { # Cloud PC in the testbed
+    "server_cpu": 100.0, 
+    "server_ram": 100.0,
+    "power_max": 150,
+    "power_min": 50,
+    "spawn_time_factor": 1.0,
+    "processing_time_factor": 1.0
+}
 
-# --- Configuration ---
+
+##################UNIVERSAL CONFIGS, CHANGE THIS EVENT WHEN RUNNING MULTI_CASES.PY!!!
 RANDOM_SEED = 42
 SIM_TIME = 200  # Simulation time units (e.g., seconds)
 METRIC_RECORDED_TIME = 0  # Time after which metrics are recorded
 VERBOSE = False  # Set to True to enable detailed logging
 
-# Container Parameters
-CONTAINER_ASSIGN_RATE = 1000000.0 # Average rate for request assignment (very fast)
-
 # Topology configuration
-USE_TOPOLOGY = True  # Enable topology routing
 COUNTRY_CODE = "DEU"  # Country code for topology selection
 TOPOLOGY_PATH = f"./topology/countries/{COUNTRY_CODE}/result.json"
-# TOPOLOGY_PATH = "./topology/Germany.json"
-# CLUSTER_PATH = "./topology/cluster.json"
-NETWORK_MODEL = "ps" # Options: "ps", "reservation"
-
  # NOTE: the following variables are used for periodic-interruption mechanism
 # used in update_request_delay to reduce runtime
 # Set it to 0 to always interrupt when event occurs
-NETWORK_UPDATE_PERIOD = 0  # Time units between interruptions
+NETWORK_UPDATE_PERIOD = 0.0005 # Time units between interruptions
+CENTRAL_CLOUD = "central_cloud"  # Central cloud name in the topology
+EDGE_DC_LEVEL = 1
+EDGE_SERVER_PROVISION_STRATEGY = "equally"  # Options: "equally", "population_weighted"
+UNIVERSAL_TIMEOUT = 30  # Time to live for idle function - warm time
+########################################################################################
+
 
 CLUSTER_STRATEGY = "centralized_cloud"  # Options: "massive_edge", "massive_edge_cloud", "centralized_cloud", "x_per_ring_edge_cloud", "x_per_ring_edge"
-CENTRAL_CLOUD = "central_cloud"  # Central cloud name in the topology
 # CENTRAL_CLOUD_NODE = "12876"  # Central cloud node ID in the topology
 EDGE_SERVER_NUMBER = 15000  # CPU capacity for all MECs
-EDGE_DC_LEVEL = 1
 NUM_DC_PER_RING = 2  # Number of edge DCs per ring (used if strategy is 'x_per_ring')
-EDGE_SERVER_PROVISION_STRATEGY = "equally"  # Options: "equally", "population_weighted"
-CLOUD_SPAWN_TIME_FACTOR = 0.5  # Cloud spawn time multiplier (faster)
-CLOUD_PROCESSING_TIME_FACTOR = 0.6  # Cloud processing time multiplier (faster)
+# CLOUD_SPAWN_TIME_FACTOR = 0.5  # Cloud spawn time multiplier (faster)
+# CLOUD_PROCESSING_TIME_FACTOR = 0.6  # Cloud processing time multiplier (faster)
 # Define Ingress nodes for custom ingress defined in define_ingress_nodes() in Topology.py
 INGRESS_MODE = 'country'  # Options: 'country', 'cities'
 EXAMINED_CITIES = {
     'Frankfurt': '12860',
     # 'Munich': 12838
 }
-
 # Define utilization for connected links
 BW_POPULATION_SCALE_ENABLE = False
 LINK_UTILIZATION_ENABLE = False  # Enable link utilization adjustments
@@ -77,43 +80,73 @@ LINK_UTILIZATION = {
     '1-0': 0.5,
     '0-1': 0.5,
     '0-0': 0.5,
-} 
-
-
-
-
-
-
-# --- Multi-Cluster Configuration ---
+}
 
 # Traffic intensity factor to scale arrival rates based on node population
-REQ_PER_PERSON = 0.00005  # Adjust this factor to scale overall traffic, default: 0.0001
+REQ_PER_PERSON = 0.0025  # Adjust this factor to scale overall traffic, default: 0.0001
 # NODE_INTENSITY = 10  # Percentage of level 3 nodes generating traffic (0-100)
 # Application definitions for heterogeneous workloads
 APPLICATIONS = {
-    "app1": { # a Tiktok video sent to Cloud for processing (10s)
-        # NOTE: spawn time follows Log-normal distribution with mean defined below
-        "mean_spawn_time": 10.0,  # Base time units to spawn a container (modified by cluster factor)
-        "std_spawn_time": 1.0,  # Standard deviation of spawn time
+    # "short-video": { # a Tiktok video sent to Cloud for processing (10s)
+    #     # NOTE: spawn time follows Log-normal distribution with mean defined below
+    #     "mean_spawn_time": 10.0,  # Base time units to spawn a container (modified by cluster factor)
+    #     "std_spawn_time": 1.0,  # Standard deviation of spawn time
 
+    #     # Service time
+    #     "mean_service_time": None,  # Mean service time in time units
+    #     # NOTE: for resource consumption, if min != max, an error will be raised since old containers
+    #     # cannot be reused if resource demands vary
+    #     # NOTE: resource consumption is considerred for edge device
+    #     "min_warm_cpu": 0.5,  # Minimum CPU for warm container
+    #     "max_warm_cpu": 0.5,  # Maximum CPU for warm container
+    #     "min_warm_ram": 15.0,  # Minimum RAM for warm container
+    #     "max_warm_ram": 15.0, # Maximum RAM for warm container
+    #     "min_req_cpu": 25.0,  # Minimum CPU demand for request
+    #     "max_req_cpu": 25.0,  # Maximum CPU demand for request 
+    #     "min_req_ram": 20.0,  # Minimum RAM demand for request
+    #     "max_req_ram": 20.0,  # Maximum RAM demand for request
+
+    #     # NOTE: data sizes also follows log-normal distribution
+    #     "file_dis_type": "log-normal",  # Distribution type for spawn time
+    #     "mean_packet_size_direct_upload": 83886080,  # in bits, 10 MB
+    #     "std_packet_size_direct_upload": 41943040,  # in bits, 5 MB
+    #     "min_packet_size_direct_upload": 8388608,  # in bits, 1 MB
+    #     "max_packet_size_direct_upload": 419430400,  # in bits, 50 MB
+    #     "packet_size_direct_download": 81920,  # in bits, default to 10 KB
+
+    #     # NOTE: indirect data path (e.g., data fetched from another node), for this app it is not used
+    #     "data_path_required": False,  # Whether data path is required
+    #     "packet_size_indirect_upload": 0,  # in bits, default to 10 MB
+    #     "packet_size_indirect_download": 0,  # in bits, default to 10 MB
+    #     "data_location": "12876",  # Location of data for this application - Cloud node
+    # },
+
+    "image-process": { # image processing using YOLO (ICOIN)
+        # NOTE: spawn time follows Log-normal distribution with mean defined below
+        "mean_spawn_time": 4.0,  # Base time units to spawn a container (modified by cluster factor)
+        "std_spawn_time": 1.0,  # Standard deviation of spawn time
+        "spawn_dis_type": "log-normal",  # Distribution type for spawn time
+         # Service time
+        "mean_service_time": 71,  # Mean service time in ms
+        "std_service_time": 2.76,  # Standard deviation of service time in ms
+        "service_dis_type": "normal",  # Distribution type for service time
         # NOTE: for resource consumption, if min != max, an error will be raised since old containers
         # cannot be reused if resource demands vary
         # NOTE: resource consumption is considerred for edge device
         "min_warm_cpu": 0.5,  # Minimum CPU for warm container
         "max_warm_cpu": 0.5,  # Maximum CPU for warm container
-        "min_warm_ram": 15.0,  # Minimum RAM for warm container
-        "max_warm_ram": 15.0, # Maximum RAM for warm container
-        "min_req_cpu": 25.0,  # Minimum CPU demand for request
-        "max_req_cpu": 25.0,  # Maximum CPU demand for request 
-        "min_req_ram": 20.0,  # Minimum RAM demand for request
-        "max_req_ram": 20.0,  # Maximum RAM demand for request
+        "min_warm_ram": 3.0,  # Minimum RAM for warm container
+        "max_warm_ram": 3.0, # Maximum RAM for warm container
+        "min_req_cpu": 8.0,  # Minimum CPU demand for request
+        "max_req_cpu": 8.0,  # Maximum CPU demand for request 
+        "min_req_ram": 5.0,  # Minimum RAM demand for request
+        "max_req_ram": 5.0,  # Maximum RAM demand for request
 
         # NOTE: data sizes also follows log-normal distribution
-        "mean_packet_size_direct_upload": 83886080,  # in bits, 10 MB
-        "std_packet_size_direct_upload": 41943040,  # in bits, 5 MB
-        "min_packet_size_direct_upload": 8388608,  # in bits, 1 MB
-        "max_packet_size_direct_upload": 419430400,  # in bits, 50 MB
+        "mean_packet_size_direct_upload": 30702305,  # in bits, 3.66 MB
+        # "std_packet_size_direct_upload": 41943040,  # in bits, 5 MB
         "packet_size_direct_download": 81920,  # in bits, default to 10 KB
+        "file_dis_type": "exponential",  # Distribution type for spawn time
 
         # NOTE: indirect data path (e.g., data fetched from another node), for this app it is not used
         "data_path_required": False,  # Whether data path is required
@@ -121,6 +154,7 @@ APPLICATIONS = {
         "packet_size_indirect_download": 0,  # in bits, default to 10 MB
         "data_location": "12876",  # Location of data for this application - Cloud node
     },
+
     # "app2": {
     #     "arrival_rate": 30.0,
     #     "service_rate": 1.5,
@@ -154,9 +188,6 @@ APPLICATIONS = {
     #     "bandwidth_direct": 15.0,  # Bandwidth demand for this application
     # }
 }
-
-UNIVERSAL_TIMEOUT = 30  # Time to live for idle function - warm time
-
 # Statistics
 request_stats = {
     'generated': 0,
@@ -288,28 +319,31 @@ app_spawn_time_metrics = {}
 app_upload_size_metrics = {}
 
 def app_log_normal_metrics(app_id):
-    """Calculate mu and sigma for log-normal distribution of spawn time."""
     app_config = APPLICATIONS[app_id]
 
-    m = app_config["mean_spawn_time"]
-    s = app_config["std_spawn_time"]
+    """Calculate mu and sigma for log-normal distribution of spawn time."""
+    if app_config["spawn_dis_type"] == "log-normal":
 
-    phi = math.sqrt(s**2 + m**2)
-    mu = math.log(m**2 / phi)
-    sigma = math.sqrt(math.log(phi**2 / m**2))
+        m = app_config["mean_spawn_time"]
+        s = app_config["std_spawn_time"]
 
-    app_spawn_time_metrics[app_id] = {"mu": mu, "sigma": sigma}
+        phi = math.sqrt(s**2 + m**2)
+        mu = math.log(m**2 / phi)
+        sigma = math.sqrt(math.log(phi**2 / m**2))
+
+        app_spawn_time_metrics[app_id] = {"mu": mu, "sigma": sigma}
 
     """Calculate mu and sigma for log-normal distribution of upload size."""
+    if app_config["file_dis_type"] == "log-normal":
+ 
+        m_data = app_config["mean_packet_size_direct_upload"]
+        s_data = app_config["std_packet_size_direct_upload"]
 
-    m_data = app_config["mean_packet_size_direct_upload"]
-    s_data = app_config["std_packet_size_direct_upload"]
+        phi_data = math.sqrt(s_data**2 + m_data**2)
+        mu_data = math.log(m_data**2 / phi_data)
+        sigma_data = math.sqrt(math.log(phi_data**2 / m_data**2))
 
-    phi_data = math.sqrt(s_data**2 + m_data**2)
-    mu_data = math.log(m_data**2 / phi_data)
-    sigma_data = math.sqrt(math.log(phi_data**2 / m_data**2))
-
-    app_upload_size_metrics[app_id] = {"mu": mu_data, "sigma": sigma_data}
+        app_upload_size_metrics[app_id] = {"mu": mu_data, "sigma": sigma_data}
 
 def generate_req_info(app_id):
     """Generate CPU and RAM demands for a specific application."""
@@ -324,17 +358,29 @@ def generate_req_info(app_id):
     ram_demand = max(ram_warm, app_config["min_req_ram"] if app_config["min_req_ram"] == app_config["max_req_ram"] else random.uniform(app_config["min_req_ram"], app_config["max_req_ram"]))
 
     # Generate packet sizes
-    packet_size_direct_upload = random.lognormvariate(app_upload_size_metrics[app_id]["mu"], app_upload_size_metrics[app_id]["sigma"])
-    packet_size_direct_upload = max(app_config["min_packet_size_direct_upload"], min(packet_size_direct_upload, app_config["max_packet_size_direct_upload"]))
-
-
+    if app_config["file_dis_type"] == "log-normal":
+        packet_size_direct_upload = random.lognormvariate(app_upload_size_metrics[app_id]["mu"], app_upload_size_metrics[app_id]["sigma"])
+    elif app_config["file_dis_type"] == "exponential":
+        packet_size_direct_upload = random.expovariate(1.0 / app_config["mean_packet_size_direct_upload"])
+    else:
+        raise ValueError("Unsupported file size distribution type.")
     # Generate spawn time following Log-normal distribution
-    spawn_time = random.lognormvariate(app_spawn_time_metrics[app_id]["mu"], app_spawn_time_metrics[app_id]["sigma"])
+    if app_config["spawn_dis_type"] == "log-normal":
+        spawn_time = random.lognormvariate(app_spawn_time_metrics[app_id]["mu"], app_spawn_time_metrics[app_id]["sigma"])
+    elif app_config["spawn_dis_type"] == "exponential":
+        spawn_time = random.expovariate(1.0 / app_config["mean_spawn_time"])
+    else:
+        raise ValueError("Unsupported file size distribution type.")
 
-
+    if app_config["mean_service_time"] is not None:
+        if app_config["service_dis_type"] == "normal":
+            service_time = random.normalvariate(app_config["mean_service_time"], app_config["std_service_time"])
+            service_time = service_time / 1000.0  # Convert ms to seconds
+    else:
+        service_time = packet_size_direct_upload / ONE_MB  # Simplified service time based on upload size
 
     generated_resource = {
-        "service_time": packet_size_direct_upload / ONE_MB,  # Simplified service time based on upload size
+        "service_time": service_time,
         "cpu_warm": cpu_warm,
         "ram_warm": ram_warm,
         "cpu_demand": cpu_demand,

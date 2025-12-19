@@ -1,10 +1,5 @@
 # Ignore figures/examined folder
-figures/examined/
-figures/AUS/
-figures/VNM/
-figures/VNM_level2/
-figures/old_results/
-figures/new/
+figures
 # Ignore Kien.zip file
 topology/Kien.zip
 output.prof

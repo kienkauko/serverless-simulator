@@ -5,20 +5,11 @@ import random
 import pandas as pd
 import multiprocessing
 import filelock
+import gc
 import variables
 import System
 import Topology
 import Scheduler
-
-# --- Excel Setup ---
-output_dir = './figures/new/{}'.format(variables.COUNTRY_CODE)
-average_results_dir = os.path.join(output_dir, 'average_results')
-individual_latency_dir = os.path.join(output_dir, 'individual_latency')
-
-# Create the directories if they don't exist
-os.makedirs(output_dir, exist_ok=True)
-os.makedirs(average_results_dir, exist_ok=True)
-os.makedirs(individual_latency_dir, exist_ok=True)
 
 # Define keys for congestion results
 congestion_keys = ['3-3', '3-2', '2-2', '2-1', '1-1', '1-0', '0-0']
@@ -35,6 +26,22 @@ class SimulationConfig:
         self.link_util_enable = metrics.get('link_utilization_enable', False)
         self.metrics = metrics
 
+        # --- Excel Setup ---
+        self.output_dir = './figures/new/{}/test/'.format(variables.COUNTRY_CODE)
+        self.average_results_dir = os.path.join(self.output_dir, 'average_results')
+        
+        if "x_per_ring" in self.strategy:
+            self.individual_latency_dir = os.path.join(self.output_dir, 'individual_latency', self.strategy, str(self.num_dc_per_ring))
+        elif "edge" in self.strategy:
+            self.individual_latency_dir = os.path.join(self.output_dir, str(variables.EDGE_SERVER_PROVISION_STRATEGY), str(variables.EDGE_DC_LEVEL), 'individual_latency')
+        else:
+            self.individual_latency_dir = os.path.join(self.output_dir, 'individual_latency')
+
+        # Create the directories if they don't exist
+        os.makedirs(self.output_dir, exist_ok=True)
+        os.makedirs(self.average_results_dir, exist_ok=True)
+        os.makedirs(self.individual_latency_dir, exist_ok=True)
+
     def apply_to_variables(self):
         """Apply configuration to the global variables module."""
         variables.CLUSTER_STRATEGY = self.strategy
@@ -50,7 +57,7 @@ class SimulationConfig:
     def get_parquet_path(self):
         """Generate the path for the parquet file."""
         filename = f"{self.strategy}_{self.num_server}_{self.intensity}_{self.link_util}.parquet"
-        return os.path.join(individual_latency_dir, filename)
+        return os.path.join(self.individual_latency_dir, filename)
 
     def __str__(self):
         return (f"Strategy='{self.strategy}', Servers={self.num_server}, "
@@ -116,6 +123,12 @@ def run_single_simulation(simulation_metrics):
     print(f"\n--- RESULTS FOR THIS RUN ---")
     for key, value in simulation_metrics.items():
         print(f"{key}: {value}")
+    
+    # Explicitly delete large objects and force garbage collection
+    del system
+    del topology
+    del env
+    gc.collect()
     
     return simulation_metrics
 
@@ -187,7 +200,7 @@ def save_single_result(sim_results):
     
     # Generate Excel filename
     filename = f"{variables.EDGE_SERVER_PROVISION_STRATEGY}_level_{variables.EDGE_DC_LEVEL}_timeout_{variables.UNIVERSAL_TIMEOUT}.xlsx"
-    excel_file_path = os.path.join(average_results_dir, filename)
+    excel_file_path = os.path.join(config.average_results_dir, filename)
     
     # Thread-safe file writing using a lock
     lock_file = excel_file_path + '.lock'
@@ -230,12 +243,12 @@ def save_single_result(sim_results):
 if __name__ == "__main__":
 
     # Iterative variables
-    cases = ["centralized_cloud"] # Options: "massive_edge_cloud", "centralized_cloud"
+    cases = ["massive_edge"] # Options: "massive_edge_cloud", "centralized_cloud", "x_per_ring_edge"
     # intensities = [i / 100000 for i in range(10, 210, 10)] # start=0.00005, stop=0.001, step=0.0001
-    intensities = [0.00005] # start=0.00005, stop=0.001, step=0.0001
-    # intensities = [0.0001, 0.0002, 0.0003, 0.0004, 0.0005] # start=0.00005, stop=0.001, step=0.0001
+    # intensities = [0.0005, 0.00055] # start=0.00005, stop=0.001, step=0.0001
+    intensities = [0.0009, 0.0011] # start=0.00005, stop=0.001, step=0.0001
     num_dc_per_ring_options = [0]  # For 'x_per_ring' strategies
-    num_edge_servers = [15000]
+    num_edge_servers = [100000]  # Number of edge servers to test
     link_utilizations = [0.0]  
     # Non-iterative variables
     # --- 1. Generate all simulation tasks ---
@@ -271,7 +284,7 @@ if __name__ == "__main__":
                             simulation_tasks.append((simulation_metrics,))  # Note the tuple with comma
         
     # --- 2. Run simulations in parallel with immediate result saving ---
-    num_processes = 5
+    num_processes = 2
     print(f"\nStarting {len(simulation_tasks)} simulations on {num_processes} processes...")
     print("Results will be saved immediately as each simulation completes.\n")
     
@@ -296,7 +309,8 @@ if __name__ == "__main__":
         completed_count[0] += 1
     
     # Use apply_async to process each result immediately as it completes
-    with multiprocessing.Pool(processes=num_processes) as pool:
+    # maxtasksperchild=1 forces the worker process to restart after each task, releasing all RAM to the OS
+    with multiprocessing.Pool(processes=num_processes, maxtasksperchild=1) as pool:
         async_results = []
         for task_args in simulation_tasks:
             # Submit each task and attach callbacks

@@ -13,16 +13,14 @@ class Topology:
         # self.clusters = clusters
         # Store edge cluster for easy access if provided
         # self.edge_cluster = [cluster for cluster_name, cluster in clusters.items() if cluster_name == "edge"] if clusters else []
-        self.network_model = variables.NETWORK_MODEL
         self.bw_factor_enable = variables.BW_POPULATION_SCALE_ENABLE
         self.bandwidth_factor = variables.REQ_PER_PERSON # Scale following the traffic intensity
         self.link_util_enable = variables.LINK_UTILIZATION_ENABLE
         self.link_utilization = variables.LINK_UTILIZATION
         print("Country: ", variables.COUNTRY_CODE)
-        print(f"Initializing topology with network model: {self.network_model}, "
+        print(f"Initializing topology..."
               f"bandwidth factor enabled: {self.bw_factor_enable}, "
               f"link utilization enabled: {self.link_util_enable}")
-        
         # Initialize Transformer for later propagation delay calculations
         self.transformer = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
 
@@ -150,7 +148,8 @@ class Topology:
 
         # Initialize edge DCs if strategy requires it
         if "edge" in variables.CLUSTER_STRATEGY:
-            print("Calculating nearby clusters for each node based on strategy: ", variables.CLUSTER_STRATEGY)
+            print("Edge strategy is: ", variables.CLUSTER_STRATEGY)
+            print("Edge DC level is: ", variables.EDGE_DC_LEVEL)
             self.edge_clusters = self.defined_edge_DCs(variables.EDGE_DC_LEVEL,  variables.CLUSTER_STRATEGY, \
                                                         variables.EDGE_SERVER_PROVISION_STRATEGY, \
                                                         variables.NUM_DC_PER_RING)
@@ -169,7 +168,7 @@ class Topology:
         """Define ingress nodes based on the specified mode."""
         if mode == 'country':
             # Define ingress nodes as all level 3 nodes
-            print("Defined ingress nodes for: country.")
+            # print("Defined ingress nodes for: country.")
             self.ingress_nodes = [node for node, data in self.graph.nodes(data=True) if data.get('level') == 3]
         elif mode == 'cities':
             # Get list of cities (node 1) from variables
@@ -183,7 +182,7 @@ class Topology:
                     # Check if grandparent is in the examined cities list
                     if grandparent in node_1_list:
                         self.ingress_nodes.append(node)
-            print(f"Defined ingress nodes for: {city_names}")
+            # print(f"Defined ingress nodes for: {city_names}")
         print(f"Total ingress nodes defined: {len(self.ingress_nodes)}")
 
 
@@ -416,7 +415,7 @@ class Topology:
         yield self.env.timeout(pre_transmission_delay)
 
         # Account for propagation and TCP setup delays
-        request.prop_delay += prop_delay  # Convert ms to seconds
+        request.prop_delay += prop_delay  
         
         # Get reference to the current process
         current_process = self.env.active_process
@@ -876,7 +875,7 @@ class Topology:
         for i, node_name in enumerate(level_nodes):
             num_servers = servers_per_cluster + (1 if i < remaining_servers else 0)
             cluster_name = f"edge-{node_name}"
-            config = variables.INTEL_NUC.copy()
+            config = variables.PC.copy()
             config.update({
                 "name": cluster_name,
                 "node": node_name,
@@ -913,7 +912,7 @@ class Topology:
         for node_name, num_servers in allocated_servers.items():
             if num_servers > 0:
                 cluster_name = f"edge-{node_name}"
-                config = variables.INTEL_NUC.copy()
+                config = variables.PC.copy()
                 config.update({
                     "name": cluster_name,
                     "node": node_name,
@@ -994,7 +993,7 @@ class Topology:
                 
                 if num_servers > 0:
                     cluster_name = f"edge-{node_name}"
-                    config = variables.INTEL_NUC.copy()
+                    config = variables.PC.copy()
                     config.update({
                         "name": cluster_name,
                         "node": node_name,

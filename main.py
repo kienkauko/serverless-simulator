@@ -201,18 +201,11 @@ else:
 
 print("\n--- Topology Link Utilizations ---")
 # Print link utilization data in a more readable format
-if NETWORK_MODEL == "reservation":
-    print("Warning: These are instantaneous values at the end of the simulation, not time-averaged.")
-    link_utilization = topology.get_link_utilization()
-    print("Link Utilizations (%):")
-    for link, value in link_utilization.items():
-        percentage = value * 100  # Convert to percentage
-        print(f"  Link {link:<6}: {percentage:.2f}%")
-else:
-    print("Congestion path statistics:")
-    # Use congested_paths from results
-    for path, count in results['congested_paths'].items():
-        print(f" Congested by path {path}: {count}")
+
+print("Congestion path statistics:")
+# Use congested_paths from results
+for path, count in results['congested_paths'].items():
+    print(f" Congested by path {path}: {count}")
     
     # print("\nAccumulated path latency (s):")
     # for path, total_delay in accumulated_path_latency.items():

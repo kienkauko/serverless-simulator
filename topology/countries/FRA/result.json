@@ -3,13 +3,13 @@
         {
             "name": "central_cloud", 
             "node": "10204",
-            "num_servers": 40000, 
-            "server_cpu": 200.0,
-            "server_ram": 200.0,
+            "num_servers": 200000, 
+            "server_cpu": 100.0, 
+            "server_ram": 100.0,
             "power_max": 150,
             "power_min": 50,
-            "spawn_time_factor": 0.5,
-            "processing_time_factor": 0.6
+            "spawn_time_factor": 1.0,
+            "processing_time_factor": 1.0
             
         }
     ]
