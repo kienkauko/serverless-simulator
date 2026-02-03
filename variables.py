@@ -34,12 +34,12 @@ PC = { # Cloud PC in the testbed
 
 ##################UNIVERSAL CONFIGS, CHANGE THIS EVENT WHEN RUNNING MULTI_CASES.PY!!!
 RANDOM_SEED = 42
-SIM_TIME = 200  # Simulation time units (e.g., seconds)
+SIM_TIME = 100  # Simulation time units (e.g., seconds)
 METRIC_RECORDED_TIME = 0  # Time after which metrics are recorded
 VERBOSE = False  # Set to True to enable detailed logging
 
 # Topology configuration
-COUNTRY_CODE = "DEU"  # Country code for topology selection
+COUNTRY_CODE = "VNM"  # Country code for topology selection
 TOPOLOGY_PATH = f"./topology/countries/{COUNTRY_CODE}/result.json"
  # NOTE: the following variables are used for periodic-interruption mechanism
 # used in update_request_delay to reduce runtime
@@ -83,15 +83,15 @@ LINK_UTILIZATION = {
 }
 
 # Traffic intensity factor to scale arrival rates based on node population
-REQ_PER_PERSON = 0.0025  # Adjust this factor to scale overall traffic, default: 0.0001
+REQ_PER_PERSON = 1  # Adjust this factor to scale overall traffic, default: 0.0001, set to 1 to get the population
 # NODE_INTENSITY = 10  # Percentage of level 3 nodes generating traffic (0-100)
 # Application definitions for heterogeneous workloads
 APPLICATIONS = {
-    # "short-video": { # a Tiktok video sent to Cloud for processing (10s)
+    # "short-video-processing": { # a Tiktok video sent to Cloud for processing (10s)
     #     # NOTE: spawn time follows Log-normal distribution with mean defined below
-    #     "mean_spawn_time": 10.0,  # Base time units to spawn a container (modified by cluster factor)
+    #     "mean_spawn_time": 4.0,  # Base time units to spawn a container (modified by cluster factor)
     #     "std_spawn_time": 1.0,  # Standard deviation of spawn time
-
+    #     "spawn_dis_type": "log-normal",  # Distribution type for spawn time
     #     # Service time
     #     "mean_service_time": None,  # Mean service time in time units
     #     # NOTE: for resource consumption, if min != max, an error will be raised since old containers
@@ -99,12 +99,12 @@ APPLICATIONS = {
     #     # NOTE: resource consumption is considerred for edge device
     #     "min_warm_cpu": 0.5,  # Minimum CPU for warm container
     #     "max_warm_cpu": 0.5,  # Maximum CPU for warm container
-    #     "min_warm_ram": 15.0,  # Minimum RAM for warm container
-    #     "max_warm_ram": 15.0, # Maximum RAM for warm container
-    #     "min_req_cpu": 25.0,  # Minimum CPU demand for request
-    #     "max_req_cpu": 25.0,  # Maximum CPU demand for request 
-    #     "min_req_ram": 20.0,  # Minimum RAM demand for request
-    #     "max_req_ram": 20.0,  # Maximum RAM demand for request
+    #     "min_warm_ram": 3.0,  # Minimum RAM for warm container
+    #     "max_warm_ram": 3.0, # Maximum RAM for warm container
+    #     "min_req_cpu": 8.0,  # Minimum CPU demand for request
+    #     "max_req_cpu": 8.0,  # Maximum CPU demand for request 
+    #     "min_req_ram": 5.0,  # Minimum RAM demand for request
+    #     "max_req_ram": 5.0,  # Maximum RAM demand for request
 
     #     # NOTE: data sizes also follows log-normal distribution
     #     "file_dis_type": "log-normal",  # Distribution type for spawn time

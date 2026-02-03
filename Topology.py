@@ -19,7 +19,7 @@ class Topology:
         self.link_utilization = variables.LINK_UTILIZATION
         print("Country: ", variables.COUNTRY_CODE)
         print(f"Initializing topology..."
-              f"bandwidth factor enabled: {self.bw_factor_enable}, "
+              f"population factor enabled: {variables.POPULATION_SCALE_ENABLE}, "
               f"link utilization enabled: {self.link_util_enable}")
         # Initialize Transformer for later propagation delay calculations
         self.transformer = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)

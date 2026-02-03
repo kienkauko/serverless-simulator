@@ -3,6 +3,7 @@
         {
             "name": "central_cloud", 
             "node": "4892",
+            "_comment": "Situated in Sydney",
             "num_servers": 200000, 
             "server_cpu": 100.0, 
             "server_ram": 100.0,

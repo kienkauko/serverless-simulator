@@ -27,7 +27,7 @@ class SimulationConfig:
         self.metrics = metrics
 
         # --- Excel Setup ---
-        self.output_dir = './figures/new/{}/test/'.format(variables.COUNTRY_CODE)
+        self.output_dir = './figures/yolo_image/{}/'.format(variables.COUNTRY_CODE)
         self.average_results_dir = os.path.join(self.output_dir, 'average_results')
         
         if "x_per_ring" in self.strategy:
@@ -243,13 +243,14 @@ def save_single_result(sim_results):
 if __name__ == "__main__":
 
     # Iterative variables
-    cases = ["massive_edge"] # Options: "massive_edge_cloud", "centralized_cloud", "x_per_ring_edge"
+    cases = ["centralized_cloud"] # Options: "massive_edge_cloud", "centralized_cloud", "x_per_ring_edge"
     # intensities = [i / 100000 for i in range(10, 210, 10)] # start=0.00005, stop=0.001, step=0.0001
     # intensities = [0.0005, 0.00055] # start=0.00005, stop=0.001, step=0.0001
-    intensities = [0.0009, 0.0011] # start=0.00005, stop=0.001, step=0.0001
+    intensities = [0.0005, 0.001, 0.0015, 0.002, 0.0025] # start=0.00005, stop=0.001, step=0.0001
+    # intensities = [0.0005, 0.00075, 0.001, 0.00125, 0.0015] # start=0.00005, stop=0.001, step=0.0001
     num_dc_per_ring_options = [0]  # For 'x_per_ring' strategies
-    num_edge_servers = [100000]  # Number of edge servers to test
-    link_utilizations = [0.0]  
+    num_edge_servers = [0]  # Number of edge servers to test
+    link_utilizations = [0]  
     # Non-iterative variables
     # --- 1. Generate all simulation tasks ---
     simulation_tasks = []
@@ -284,7 +285,7 @@ if __name__ == "__main__":
                             simulation_tasks.append((simulation_metrics,))  # Note the tuple with comma
         
     # --- 2. Run simulations in parallel with immediate result saving ---
-    num_processes = 2
+    num_processes = len(intensities)
     print(f"\nStarting {len(simulation_tasks)} simulations on {num_processes} processes...")
     print("Results will be saved immediately as each simulation completes.\n")
     
