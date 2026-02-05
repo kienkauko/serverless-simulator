@@ -14,18 +14,18 @@ from System import System
 env = simpy.Environment()
 
 # Initialize statistics dictionaries from variables.py
-if 'request_stats' not in globals():
-    request_stats = {"generated": 0, "processed": 0, "container_spawns_initiated": 0, "container_spawns_succeeded": 0, "container_spawns_failed": 0, "containers_reused": 0, "containers_removed_idle": 0, "blocked_no_server_capacity": 0, "reuse_oom_failures": 0}
+# if 'request_stats' not in globals():
+#     request_stats = {"generated": 0, "processed": 0, "container_spawns_initiated": 0, "container_spawns_succeeded": 0, "container_spawns_failed": 0, "containers_reused": 0, "containers_removed_idle": 0, "blocked_no_server_capacity": 0, "reuse_oom_failures": 0}
 
-if 'latency_stats' not in globals():
-    latency_stats = {"total_latency": 0.0, "spawning_time": 0.0, "waiting_time": 0.0, "processing_time": 0.0, "container_wait_time": 0.0, "assignment_time": 0.0, "count": 0}
+# if 'latency_stats' not in globals():
+#     latency_stats = {"total_latency": 0.0, "spawning_time": 0.0, "waiting_time": 0.0, "processing_time": 0.0, "container_wait_time": 0.0, "assignment_time": 0.0, "count": 0}
 
 # Create the System with config dictionary
-system = System(env, config, distribution=config["system"]["distribution"], verbose=config["system"]["verbose"])
+system = System(env, config, distribution=config["distribution"], verbose=config["system"]["verbose"])
 
 # Add servers directly to the system
 for i in range(config["system"]["num_servers"]):
-    server = Server(env, f"Server-{i}", config["server"]["cpu_capacity"], config["server"]["ram_capacity"])
+    server = Server(env, f"Server-{i}", config["server"])
     system.add_server(server)
 
 # Start the pre-warming process and get its event
@@ -46,44 +46,45 @@ env.process(system.resource_monitor_process())
 
 # Run the simulation
 print(f"\nStarting simulation with parameters:")
-print(f"- Arrival Rate (λ): {config['request']['arrival_rate']} req/s")
+print(f"- Arrival Rate Mean (λ): {config['request']['arrival_rate_mean']} req/s (σ={config['request']['arrival_rate_std']})")
+print(f"- Arrival Distribution: {config['distribution']['arrival-distribution']}")
 print(f"- Service Rate (μ): {config['request']['service_rate']} req/s")
+print(f"- Service Distribution: {config['distribution']['service-distribution']}")
 print(f"- Number of Servers: {config['system']['num_servers']}")
-# print(f"- CPU Demand: {CPU_DEMAND}") # Using the backward compatibility variable for display
-# print(f"- RAM Demand: {RAM_DEMAND}") # Using the backward compatibility variable for display
 print(f"- Simulation Time: {config['system']['sim_time']}s")
-print(f"- Container Spawn Time: {config['container']['spawn_time']}s")
-print(f"- Container Idle Timeout: {config['container']['idle_cpu_timeout']}s\n")
-print(f"- Model Idle Timeout: {config['container']['idle_model_timeout']}s\n")
+print(f"- Container Spawn Time Mean: {config['container']['spawn_time_mean']}s (σ={config['container']['spawn_time_std']})")
+print(f"- Spawn Distribution: {config['distribution']['spawn-distribution']}")
+print(f"- Container Idle Timeout: {config['container']['idle_cpu_timeout']}s")
+print(f"- Warm Pool Size: {system.max_warm_queue} containers ({config['system']['warm_percent']*100}%)\n")
 
 env.run(until=config["system"]["sim_time"])
 
 # Print final statistics
 print("\n--- Simulation Statistics ---")
-print(f"Requests Generated: {request_stats['generated']}")
-print(f"Requests Processed: {request_stats['processed']}")
-print(f"Requests Blocked (No Capacity): {request_stats['blocked_no_server_capacity']}")
+print(f"Requests Generated: {system.request_stats['generated']}")
+print(f"Requests Processed: {system.request_stats['processed']}")
+print(f"Requests Blocked (No Capacity): {system.request_stats['blocked_no_server_capacity']}")
 
 # Calculate and print blocking probability
-if request_stats['generated'] > 0:
-    blocking_probability = request_stats['blocked_no_server_capacity'] / request_stats['generated']
+if system.request_stats['generated'] > 0:
+    blocking_probability = system.request_stats['blocked_no_server_capacity'] / system.request_stats['generated']
     print(f"Blocking Probability: {blocking_probability:.4f} ({blocking_probability*100:.2f}%)")
 
-print(f"Container Spawns Initiated: {request_stats['container_spawns_initiated']}")
-print(f"Container Spawns Succeeded: {request_stats['container_spawns_succeeded']}")
-print(f"Container Spawns Failed: {request_stats['container_spawns_failed']}")
-print(f"Containers Reused: {request_stats['containers_reused']}")
-print(f"Container OOM Reuse Failures: {request_stats['reuse_oom_failures']}")
-print(f"Containers Removed Idle: {request_stats['containers_removed_idle']}")
+print(f"Container Spawns Initiated: {system.request_stats['container_spawns_initiated']}")
+print(f"Container Spawns Succeeded: {system.request_stats['container_spawns_succeeded']}")
+print(f"Container Spawns Failed: {system.request_stats['container_spawns_failed']}")
+print(f"Containers Reused: {system.request_stats['containers_reused']}")
+print(f"Container OOM Reuse Failures: {system.request_stats['reuse_oom_failures']}")
+print(f"Containers Removed Idle: {system.request_stats['containers_removed_idle']}")
 
 # Print latency statistics
-if latency_stats['count'] > 0:
-    avg_total = latency_stats['total_latency'] / latency_stats['count']
-    avg_spawn = latency_stats['spawning_time'] / latency_stats['count']
-    avg_wait = latency_stats['waiting_time'] / latency_stats['count']
-    avg_proc = latency_stats['processing_time'] / latency_stats['count']
-    avg_container_wait = latency_stats['container_wait_time'] / latency_stats['count']
-    avg_assignment = latency_stats['assignment_time'] / latency_stats['count']
+if system.latency_stats['count'] > 0:
+    avg_total = system.latency_stats['total_latency'] / system.latency_stats['count']
+    avg_spawn = system.latency_stats['spawning_time'] / system.latency_stats['count']
+    avg_wait = system.latency_stats['waiting_time'] / system.latency_stats['count']
+    avg_proc = system.latency_stats['processing_time'] / system.latency_stats['count']
+    avg_container_wait = system.latency_stats['container_wait_time'] / system.latency_stats['count']
+    avg_assignment = system.latency_stats['assignment_time'] / system.latency_stats['count']
     
     print("\n--- Average Latencies ---")
     print(f"Total End-to-End Latency: {avg_total:.2f}s")
@@ -98,7 +99,7 @@ if system.env.now > 0:
     avg_waiting_count = system.total_waiting_area / system.env.now
     avg_processing_count = system.get_mean_processing_count()
     avg_system_count = system.get_mean_requests_in_system()
-    effective_arrival_rate = request_stats['processed'] / system.env.now
+    effective_arrival_rate = system.request_stats['processed'] / system.env.now
     little_law_wait_time = avg_waiting_count / effective_arrival_rate if effective_arrival_rate > 0 else 0
     
     print("\n--- Queue Metrics ---")
@@ -107,7 +108,7 @@ if system.env.now > 0:
     print(f"Average number of requests in system: {avg_system_count:.2f}")
     print(f"Effective arrival rate: {effective_arrival_rate:.2f} req/s")
     print(f"Little's Law predicted waiting time: {little_law_wait_time:.2f}s")
-    print(f"Actual average waiting time from measurements: {avg_wait:.2f}s")
+    # print(f"Actual average waiting time from measurements: {avg_wait:.2f}s")
 
 # Print resource utilization statistics
 mean_cpu_usage = system.get_mean_cpu_usage()

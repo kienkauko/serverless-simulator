@@ -26,7 +26,7 @@ class Server:
 
     def has_capacity(self, resource_info):
         """Checks if the server currently has enough free resources."""       
-        return self.cpu_reserve >= resource_info['cpu_demand'] and self.ram_reserve >= resource_info['ram_demand'] and self.cpu_real >= resource_info['warm_cpu_model'] and self.ram_real >= resource_info['warm_ram_model']
+        return self.cpu_reserve >= resource_info['cpu_demand'] and self.ram_reserve >= resource_info['ram_demand'] and self.cpu_real >= resource_info['warm_cpu'] and self.ram_real >= resource_info['warm_ram']
     
     def allocate_resources(self, delta_cpu, delta_ram):
         """Safely allocates CPU and RAM resources if available.

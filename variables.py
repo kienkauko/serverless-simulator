@@ -2,7 +2,7 @@ import random
 import math
 # --- Configuration ---
 RANDOM_SEED = 42
-SIM_TIME = 500  # Simulation time units (e.g., seconds)
+SIM_TIME = 9000  # Simulation time units (e.g., seconds)
 
 # Topology configuration
 USE_TOPOLOGY = False  # New flag to enable/disable topology routing
@@ -13,40 +13,43 @@ config = {
     "system": {
         "num_servers": 10,
         "sim_time": 9000,
-        "distribution": "exponential",  # Options: "deterministic", "uniform", "exponential"
         "verbose": False,
         "warm_percent": 0.5,  # Percentage of warm containers
     },
-    
+    "distribution": {
+        "spawn-distribution": "lognormal",  # Options: "deterministic", "lognormal", "exponential"
+        "arrival-distribution": "weibull",  # Options: "deterministic", "weibull", "exponential
+        "service-distribution": "exponential",  # Options:  "exponential 
+    },
     # Server Parameters
     "server": {
         "cpu_capacity": 100.0,  # %
         "ram_capacity": 100.0,  # %
         "peak_power": 150.0,  # Peak power in Watts
-        "power_scale": 0.5,  # Power scale factor
+        "power_scale": 0.2,  # Power scale factor
     },
     
     # Request Parameters
     "request": {
-        "arrival_rate": 15,  # Average requests per time unit (lambda for M)
-        "service_rate": 1,  # Average service completions per time unit (mu for M)
-        
+        "arrival_rate_mean": 50,  # Average requests per time unit (lambda for M)
+        "arrival_rate_std": 20,   # Stddev for arrival rate 
+        "service_rate": 1/10,  # Average service completions per time unit (mu for M)
         # CPU and RAM demands - fixed values instead of ranges
-        "warm_cpu": 1,
-        "warm_ram": 30.0,
-        "warm_cpu_model": 1,
-        "warm_ram_model": 30.0,
-        "cpu_demand": 50.0,
-        "ram_demand": 40.0,
+        "warm_cpu": 0.48,
+        "warm_ram": 2.10,
+        "cold_start_cpu": 3.22,
+        "cold_start_ram": 2.10,
+        "cpu_demand": 17.80,
+        "ram_demand": 4.28,
     },
     
     # Container Parameters
     # NOTE: These following parameters are heavily customized for the static warm
     # pool paper. Please use different branch for normal serverless simulation
     "container": {
-        "spawn_time": 4,   # Time units to spawn a container
+        "spawn_time_mean": 6.05,   # Time units to spawn a container
+        "spawn_time_std": 0.46,    # Stddev for spawn time 
         "idle_cpu_timeout": 0,     # Time units an idle container waits before removal
-        "idle_model_timeout": 0,   # Time units an idle model waits before removal
         "load_request_time": 0,  # Time units to load a request into a container
         "load_model_time": 0,    # Time units to load a model into a container
     },

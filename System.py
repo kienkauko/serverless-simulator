@@ -4,11 +4,13 @@ import itertools
 import math  # Added for sine calculations in day-night pattern
 from variables import *
 from Request import Request
-from Container import Container 
+from Container import Container
+from Helper import weibull_params_from_mean_std, lognormal_params_from_mean_std
+
 
 class System:
     """Orchestrates the simulation, managing servers, requests, and containers."""
-    def __init__(self, env, config, distribution='exponential', pattern_type='poisson', verbose=False):
+    def __init__(self, env, config, distribution, pattern_type='poisson', verbose=False):
         self.env = env
         self.servers = []  # Direct list of servers
         # self.idle_containers = simpy.Store(env)
@@ -18,13 +20,34 @@ class System:
         self.warm_queue = 0
         self.max_warm_queue = self.calculate_warm_number(config) # Percentage of warm containers
         print(f"Warm queue size: {self.max_warm_queue}")
-        self.arrival_rate = config["request"]["arrival_rate"]
+        # Arrival rate parameters
+        self.arrival_rate_mean = config["request"]["arrival_rate_mean"]
+        self.arrival_rate_std = config["request"]["arrival_rate_std"]
         self.service_rate = config["request"]["service_rate"]
-        self.spawn_container_time_mean = config["container"]["spawn_time"]
-        self.distribution = distribution  # Added parameter for distribution type
+        
+        # Spawn time parameters
+        self.spawn_time_mean = config["container"]["spawn_time_mean"]
+        self.spawn_time_std = config["container"]["spawn_time_std"]
+        
+        self.distribution = distribution  # Dictionary with distribution types
         self.pattern_type = pattern_type  # Traffic pattern type: 'poisson' or 'day_night'
         self.verbose = verbose  # Flag to control logging output
         self.req_id_counter = itertools.count()
+        
+        # Pre-calculate distribution parameters for Weibull (arrival) and Lognormal (spawn)
+        if self.distribution["arrival-distribution"] == "weibull":
+            # Convert arrival rate (req/s) to inter-arrival time (s/req)
+            # For rate λ with std σ_λ, inter-arrival time has mean 1/λ
+            # Using delta method approximation: std of 1/X ≈ std(X) / mean(X)^2
+            inter_arrival_mean = 1.0 / self.arrival_rate_mean
+            inter_arrival_std = self.arrival_rate_std / (self.arrival_rate_mean ** 2)
+            self.arrival_weibull_shape, self.arrival_weibull_scale = weibull_params_from_mean_std(
+                inter_arrival_mean, inter_arrival_std
+            )
+        if self.distribution["spawn-distribution"] == "lognormal":
+            self.spawn_lognormal_mu, self.spawn_lognormal_sigma = lognormal_params_from_mean_std(
+                self.spawn_time_mean, self.spawn_time_std
+            )
         
 
         
@@ -101,12 +124,12 @@ class System:
                 self.request_stats['container_spawns_initiated'] += 1
                 self.request_pending += 1  # Increment pending requests
                 request.state = "Pending"  # Update request state to Pending
-                # Spawn the container and wait for completion
-                spawn_process = self.env.process(self.spawn_container_process(server, request))
+                # Spawn the container and wait for completion (is_pre_warm=True for warm resources)
+                spawn_process = self.env.process(self.spawn_container_process(server, request, is_pre_warm=True))
                 spawned_container = yield spawn_process
                 if spawned_container:
                     self.idle_containers.append(spawned_container)
-                    server.containers.append(spawned_container) # Track container on server
+                    # Note: server.containers.append is already done in spawn_container_process
                 else:
                     # Container spawn failed
                     print(f"{self.env.now:.2f} - FATAL ERROR: Container spawn failed on {server}.")
@@ -130,12 +153,32 @@ class System:
         - 'poisson': Standard Poisson process with fixed arrival rate
         - 'day_night': Time-varying arrival rate based on day-night cycle
         - 'up_down': Traffic pattern that linearly increases to a peak and then decreases
+        
+        Supports multiple arrival distributions:
+        - 'exponential': Exponentially distributed inter-arrival times
+        - 'deterministic': Fixed inter-arrival times (1/arrival_rate)
+        - 'weibull': Weibull distributed inter-arrival times
         """
         while True:
             # Get the appropriate arrival rate based on pattern type
-            current_arrival_rate = self.arrival_rate     
-            # Calculate inter-arrival time using the determined rate
-            inter_arrival_time = random.expovariate(current_arrival_rate)
+            arrival_distribution = self.distribution["arrival-distribution"]
+            
+            # Calculate inter-arrival time based on distribution type
+            if arrival_distribution == "exponential":
+                # Exponentially distributed inter-arrival time
+                inter_arrival_time = random.expovariate(self.arrival_rate_mean)
+            elif arrival_distribution == "deterministic":
+                # Deterministic inter-arrival time (1/rate)
+                inter_arrival_time = 1.0 / self.arrival_rate_mean
+            elif arrival_distribution == "weibull":
+                # Weibull distributed inter-arrival time
+                inter_arrival_time = random.weibullvariate(
+                    self.arrival_weibull_scale, self.arrival_weibull_shape
+                )
+            else:
+                # Default to exponential if unknown distribution
+                inter_arrival_time = random.expovariate(self.arrival_rate_mean)
+            
             yield self.env.timeout(inter_arrival_time)
 
             # Generate request details
@@ -248,15 +291,26 @@ class System:
                 return server
         return None
 
-    def spawn_container_process(self, server, request):
-        """Simulates the time and resource acquisition for spawning a container."""
+    def spawn_container_process(self, server, request, is_pre_warm=False):
+        """Simulates the time and resource acquisition for spawning a container.
+        
+        Args:
+            server: The server to spawn the container on
+            request: The request that triggered the spawn
+            is_pre_warm: If True, uses warm resources; if False, uses cold_start resources
+        """
         try:
             # Request the lock to prevent race conditions
             # Update resource stats before allocation
             self.update_resource_stats()
             # Allocate resources directly from server variables
-            server.cpu_real -= request.cpu_warm
-            server.ram_real -= request.ram_warm
+            # Use warm resources for pre-warming, cold_start resources for regular spawns
+            if is_pre_warm:
+                server.cpu_real -= request.cpu_warm
+                server.ram_real -= request.ram_warm
+            else:
+                server.cpu_real -= request.cpu_cold_start
+                server.ram_real -= request.ram_cold_start
             server.cpu_reserve -= request.cpu_demand
             server.ram_reserve -= request.ram_demand
 
@@ -265,18 +319,30 @@ class System:
                 exit(1)
             
             # Wait for the container to be spawned
-            if self.distribution == 'exponential':
+            spawn_distribution = self.distribution["spawn-distribution"]
+            
+            if spawn_distribution == 'exponential':
                 # Exponentially distributed spawn time
-                spawn_time_real = random.expovariate(1.0/self.spawn_container_time_mean)
-            else:
+                spawn_time_real = random.expovariate(1.0 / self.spawn_time_mean)
+            elif spawn_distribution == 'deterministic':
                 # Deterministic spawn time equal to the mean
-                spawn_time_real = self.spawn_container_time_mean
+                spawn_time_real = self.spawn_time_mean
+            elif spawn_distribution == 'lognormal':
+                # Lognormal distributed spawn time
+                spawn_time_real = random.lognormvariate(
+                    self.spawn_lognormal_mu, self.spawn_lognormal_sigma
+                )
+            else:
+                # Default to exponential if unknown distribution
+                spawn_time_real = random.expovariate(1.0 / self.spawn_time_mean)
+            
             if self.verbose:
                 print(f"{self.env.now:.2f} - Waiting {spawn_time_real:.2f} time units for container spawning...")
             yield self.env.timeout(spawn_time_real)
 
             # Spawning complete, create the container object
-            container = Container(self.env, self, server, request.resource_info)
+            # is_cold_start is the opposite of is_pre_warm
+            container = Container(self.env, self, server, request.resource_info, is_cold_start=not is_pre_warm)
             server.containers.append(container) # Track container on server
             if self.verbose:
                 print(f"{self.env.now:.2f} - Spawn Complete: Created {container}")
@@ -304,11 +370,11 @@ class System:
 
         request = container.current_request
 
-        if self.distribution == 'exponential':
+        # if self.distribution == 'exponential':
                 # Exponentially distributed spawn time
-            service_time = random.expovariate(self.service_rate)
-        else:
-            service_time = self.service_rate  # Deterministic service time equal to the mean
+        service_time = random.expovariate(self.service_rate)
+        # else:
+        #     service_time = self.service_rate  # Deterministic service time equal to the mean
             
         if self.verbose:
             print(f"{self.env.now:.2f} - {request} starting service in {container}. Expected duration: {service_time:.2f}")

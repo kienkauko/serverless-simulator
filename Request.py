@@ -3,10 +3,12 @@ class Request:
     def __init__(self, req_id, arrival_time, resource_demand, origin_node=None):
         self.cpu_warm = resource_demand['warm_cpu']
         self.ram_warm = resource_demand['warm_ram']
+        self.cpu_cold_start = resource_demand['cold_start_cpu']
+        self.ram_cold_start = resource_demand['cold_start_ram']
         self.cpu_demand = resource_demand['cpu_demand']
         self.ram_demand = resource_demand['ram_demand']
-        self.cpu_warm_model = resource_demand['warm_cpu_model']
-        self.ram_warm_model = resource_demand['warm_ram_model']
+        # self.cpu_warm_model = resource_demand['warm_cpu_model']
+        # self.ram_warm_model = resource_demand['warm_ram_model']
         self.resource_info = resource_demand
         self.id = req_id
         self.arrival_time = arrival_time

@@ -32,12 +32,7 @@ class MarkovModel():
         self._cpu_active = config["cpu_demand"]
         self._peak_power = config["peak_power"]
         self._power_scale = config["power_scale"]
-        # self._preload_videos = self._max_preload_segments / self._preload_segments_per_video
-        # if self._preload_videos % 1 != 0:
-        #     raise Exception(f"Invalid number of preloaded videos: {self._preload_videos}")
-        # assert self._preload_segments_per_video <= self._segments_per_video
         
-        # self._lam_factor = config["lam_factor"]
         self._G = self.build_graph()
         if self._verbose:
             print("Markov: Computing probabilities...")
@@ -242,7 +237,7 @@ class MarkovModel():
         if resource == "cpu":
             active = self._cpu_active
             warm = self._cpu_warm
-            transit = 3.0
+            transit = 3.22
         elif resource == "ram":
             active = self._ram_active
             warm = self._ram_warm
@@ -608,23 +603,23 @@ def my_draw_networkx_edge_labels(
 
 if __name__=="__main__":
     config = {
-        "lam": 1,
-        "mu": 1,
-        "spawn_rate": 1,
+        "lam": 50,
+        "mu": 1/10,
+        "spawn_rate": 1/6.05,
         "queue_warm":5, # queue
         "queue_cold": 5, # queue
         "serving_time": "exponential",
         "arrivals": "exponential",
         # "lam_factor": 1,
-        "ram_warm": 30,
-        "cpu_warm": 1,
-        "ram_demand": 40,
-        "cpu_demand": 50,
+        "ram_warm": 2.10,
+        "cpu_warm": 0.48,
+        "ram_demand": 4.28,
+        "cpu_demand": 17.80,
         "peak_power": 150.0,
-        "power_scale": 0.5,  # Power scale factor
+        "power_scale": 0.2,  # Power scale factor
 
     }
     m = MarkovModel(config, verbose=False)
     G = m._G
-    # draw_graph_updated(G, node_size=1000)
+    #draw_graph_updated(G, node_size=1000)
     print(m.get_metrics())

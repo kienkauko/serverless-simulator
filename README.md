@@ -1,107 +1,213 @@
 # Markov Model for Serverless Deployment
 
-This repo contains scripts to generate 3D Markov chain that models the operation of serverless function (with different states in its lifecycle: null, warm, active). From the model, various performance and consumption metrics can be derived. This repo also comes with a simple simulator that simulates serverless deployment in reaction to homogeneous requests coming to a cluster of homogeneous servers. The simulator is used to verify and validate the Markov model. A better simulator that captures sophisticated mapping and routing strategies is available in branch main.
+This repository contains scripts to generate a 2D Markov Chain that models the operation of a fixed warm-pool serverless system. From the model, various performance and consumption metrics can be derived. This repository also includes a discrete-event simulator that simulates serverless deployment in response to homogeneous requests arriving at a cluster of homogeneous servers. The simulator is used to verify and validate the Markov model.
+
+> **Note:** A more comprehensive simulator with sophisticated mapping and routing strategies is available in the `main` branch.
+
+---
+
+## Table of Contents
+- [Markov Model for Serverless Deployment](#markov-model-for-serverless-deployment)
+  - [Table of Contents](#table-of-contents)
+  - [How to Run](#how-to-run)
+    - [0. Requirements](#0-requirements)
+    - [1. Standalone Mode](#1-standalone-mode)
+      - [Markov Model](#markov-model)
+      - [Simulator](#simulator)
+    - [2. Comparison Mode](#2-comparison-mode)
+  - [Detailed Simulation Report](#detailed-simulation-report)
+  - [Simulator Functions \& Mechanisms](#simulator-functions--mechanisms)
+    - [Request Generation](#request-generation)
+    - [Container Assignment Mechanism](#container-assignment-mechanism)
+    - [Statistics \& Logging](#statistics--logging)
+  - [Markov Model Implementation](#markov-model-implementation)
+    - [2D State Representation](#2d-state-representation)
+    - [Transition Rates](#transition-rates)
+    - [Performance Metrics](#performance-metrics)
+    - [Resource Metrics](#resource-metrics)
+  - [Model Comparison Framework](#model-comparison-framework)
+    - [Comparative Analysis](#comparative-analysis)
+    - [Configurable Scenarios](#configurable-scenarios)
+    - [Metric Evaluation](#metric-evaluation)
+
+---
 
 ## How to Run
+
+### 0. Requirements
+
+```bash
+pip install -f requirements.txt
+```
 
 ### 1. Standalone Mode
 
 #### Markov Model
-- Run [`/Markov/model_3D.py`](/Markov/model_3D.py) to execute the Markov model
-- The graph illustration of the Markov state machine can be enabled by uncommenting the `draw_graph_new` function in the main section
-- Example of graph output: [`/Markov/graph_example.png`](/Markov/graph_example.png)
-
+Run the Markov model independently:
+```bash
+python Markov/model_2D.py
+```
+- Configuration: the model reads parameters from the `config` object in the `__main__` section (edit there before running).
+- Outputs: prints the analytical performance metrics to the console (blocking ratio, throughput, latencies, resource metrics) and returns them from `__main__`.
+- Visualization: to draw the 2D Markov graph, uncomment `draw_graph_updated()` in `__main__`. Warning: disable this for large `queue_warm` or `queue_cold` values — plotting very large state spaces can freeze your PC.
+ 
 #### Simulator
-- Run [`main.py`](main.py) to execute the simulator
-- When running in standalone mode, the simulator will take input parameters from [`variables.py`](variables.py)
+Run the discrete-event simulator:
+```bash
+python main.py
+```
+- In standalone mode, the simulator reads input parameters from [`variables.py`](variables.py)
+- Outputs simulation statistics and performance metrics
 
 ### 2. Comparison Mode
-- Run [`model_comparison.py`](model_comparison.py) to execute both the Markov model and simulator with the same input parameters
-- Results are compared against each other and stored in the [`/comparison_results`](/comparison_results) folder
-- Input metrics for this mode can be configured in the main section of [`model_comparison.py`](model_comparison.py)
-- Note that [`variables.py`](variables.py) is not used as input for the simulator in this mode
+Run both the Markov model and simulator with identical parameters:
+```bash
+python compare_model_simulator.py
+```
+- Results are compared and stored in the [`/comparison_results`](/comparison_results) folder
+- Input metrics are configured in the main section of [`compare_model_simulator.py`](compare_model_simulator.py)
+- **Note:** [`variables.py`](variables.py) is not used in this mode
 
-# Detailed Simulation Report
+---
 
-- **Report Generated:** 10:43AM on 16/04/2025
-- **Updated:** 05/05/2025
+## Detailed Simulation Report
+
+**Report Generated:** 10:43 AM on April 16, 2025  
+**Last Updated:** February 5, 2026
+
+---
 
 ## Simulator Functions & Mechanisms
 
-- **Request Generation:**
-  - Requests are created randomly at nodes.
-  - Request routing has been removed since it doesn't contribute to the model. Edge-cloud simulator has been moved to branch "main".
+### Request Generation
+- **Arrival Distributions:** Requests can be generated following:
+  - **Exponential** (Poisson arrivals)
+  - **Weibull** (configurable shape/scale)
+  - **Deterministic** (fixed inter-arrival time)
+- **Configuration:** Arrival patterns are set in [`variables.py`](variables.py)
+- **Resource Demand:** Each request has fixed CPU and RAM requirements
 
-- **Total Latency Calculation:**
-  - Total latency is now computed as:  
-    Total Latency = Request Waiting Time + Serving Time.
 
-- **Container Assignment Mechanism:**
-  - On request arrival, the simulator first checks for any idle container:
-    - If an idle container is found, it is immediately assigned to handle the request.
-    - Otherwise, a new container is spawned on a server with sufficient capacity.
-  - Idle containers are monitored with a timeout; if reused before expiration, the idle timeout is cancelled.
+**Cold-Start Distributions:**
+- **Exponential:** Memoryless cold-start times
+- **Lognormal:** Right-skewed cold-start times (more realistic)
+- **Deterministic:** Fixed cold-start duration
 
-- **Resource Consumption at Each State:**
-  - **Before Request Assignment:**
-    - Servers maintain two resources: "real" (warm resources) and "reserve" to reserve resources for "active" state of container when a request is assigned to it.
-  - **When Assigning a Request:**
-    - Initially, a container uses its warm resource allocation.
-    - If the request demands exceed the container's warm allocation, additional resources are drawn from the server's reserve.
-  - **During Request Processing:**
-    - The container remains active while consuming additional allocated resources.
-  - **After Processing:**
-    - Extra allocated resources are released; the container reverts to its default warm state and is marked idle.
-    - Idle containers are then placed in an idle pool for potential reuse.
+Configure in [`variables.py`](variables.py) under `spawn-distribution`.
 
-- **Additional Simulator Notes:**
-  - Simulation statistics aggregate metrics such as processed requests, resource spawning attempts, blocking reasons, and latency sums.
-  - Detailed logging is implemented to track each step in the lifecycle of requests and containers.
+### Container Assignment Mechanism
+
+The simulator follows this workflow for each arriving request:
+
+1. **Check Idle Containers:**
+   - If an idle container is available → assign immediately
+   - Otherwise → proceed to spawning
+
+2. **Spawn New Container:**
+   - Check server capacity (CPU and RAM)
+   - If sufficient resources → spawn container and assign request
+   - If all servers are at capacity → **reject request immediately**
+
+3. **Request Rejection:**
+   - This is a **loss system** (no queuing, no retries)
+   - Rejected requests are blocked permanently
+
+4. **Container Lifecycle:**
+   - **Pre-warmed Pool:** System maintains a fixed number of warm containers
+   - **Cold-Started Containers:** Removed immediately after completing their job
+
+> **Note:** A system with graceful timeout for idle containers is available in the comprehensive simulator on the `main` branch.
+
+### Statistics & Logging
+- **Tracked Metrics:**
+  - Total requests generated/processed/blocked
+  - Container spawns (initiated/succeeded/failed)
+  - Container reuse rate
+  - Latency breakdown (waiting/spawning/processing)
+  - Resource utilization (CPU/RAM/Energy)
+
+---
 
 ## Markov Model Implementation
 
-- **3D State Representation:**
-  - The Markov folder contains a continuous-time Markov chain (CTMC) model in [`model_3D.py`](/Markov/model_3D.py).
-  - States are represented as 3D tuples (i, j, k) where:
-    - i: Number of waiting requests.
-    - j: Number of available containers (idle or active).
-    - k: Number of requests being processed.
-  
-- **Transition Rates:**
-  - **λ (lambda):** Request arrival rate.
-  - **μ (mu):** Service completion rate.
-  - **α (alpha):** Container spawning rate.
-  - **β (beta):** Request assignment rate.
-  - **θ (theta):** Container timeout rate.
+### 2D State Representation
+The continuous-time Markov chain (CTMC) model is implemented in [`Markov/model_2D.py`](/Markov/model_2D.py).
 
-- **Performance Metrics:**
-  - Blocking ratios: Percentage of requests that are blocked.
-  - Waiting requests: Average number of requests waiting in the queue.
-  - Processing requests: Average number of requests being processed.
-  - Effective arrival rates: Actual arrival rate considering blocked requests.
-  - Waiting times: Average time a request waits before being processed.
+**State Space:** States are represented as 2D tuples `(i, j)` where:
+- **i:** Number of jobs processed by warm containers
+- **j:** Number of jobs processed by cold-started containers
+
+### Transition Rates
+
+| Symbol | Description | Unit |
+|--------|-------------|------|
+| **λ** | Request arrival rate | req/s |
+| **μ** | Service completion rate (warm containers) | req/s |
+| **α** | Effective completion rate (cold containers) | req/s |
+
+> **Note:** α combines the service rate μ and the spawning rate (1/cold-start time)
+
+### Performance Metrics
+
+The model calculates:
+
+| Metric | Description |
+|--------|-------------|
+| **Blocking Ratio** | Percentage of requests rejected due to lack of resources |
+| **Waiting Requests** | Average number of requests waiting for containers |
+| **Processing Requests** | Average number of requests currently being served |
+| **Effective Arrival Rate** | Actual throughput considering blocked requests |
+| **Mean Waiting Time** | Average time from arrival to service start |
+
+### Resource Metrics
+
+| Metric | Description | Unit |
+|--------|-------------|------|
+| **CPU Consumption** | Expected CPU-time over simulation period | CPU%·s |
+| **RAM Consumption** | Expected RAM-time over simulation period | RAM%·s |
+| **Energy Consumption** | Expected power consumption (Power × time) | Wh |
+
+---
 
 ## Model Comparison Framework
 
-- **Comparative Analysis:**
-  - The [`model_comparison.py`](model_comparison.py) file provides a framework to compare the analytical Markov model with simulation results.
-  - Parameters are unified between both approaches to ensure fair comparison.
+### Comparative Analysis
+The [`compare_model_simulator.py`](compare_model_simulator.py) script provides a unified framework to validate the analytical Markov model against simulation results.
+
+
+### Configurable Scenarios
+Define multiple test cases with varying parameters:
+
+```python
+scenarios = [
+    {
+        "arrival_rate": 50,
+        "service_rate": 0.1,
+        "spawn_time": 6.05,
+        "num_servers": 10,
+        # ... other parameters
+    },
+    # Additional scenarios...
+]
+```
+
+**Configurable Parameters:**
+- Arrival and service rates
+- Container spawn and timeout rates
+- Server resource capacities (CPU/RAM)
+- Warm pool size
+
+### Metric Evaluation
+
+The comparison framework calculates:
+
+| Error Metric | Formula | Description |
+|--------------|---------|-------------|
+| **MSE** | Mean((Model - Sim)²) | Overall deviation magnitude |
+| **MAPE** | Mean(\|Model - Sim\| / Sim × 100%) | Relative error percentage |
+| **Individual Differences** | Model - Sim | Per-metric deviation |
+
+**Output Files:**
+- **CSV Results:** Saved to [`/comparison_results`](/comparison_results)
   
-- **Configurable Scenarios:**
-  - Multiple test scenarios can be defined with different parameter sets:
-    - Arrival and service rates.
-    - Container spawn and timeout rates.
-    - Request assignment rates.
-    - Queue size limits.
-    - Server resource capacities.
-
-- **Metric Evaluation:**
-  - Comparison metrics include:
-    - Mean Squared Error (MSE): Overall deviation between model predictions and simulation results.
-    - Mean Absolute Percentage Error (MAPE): Relative error expressed as a percentage.
-    - Individual metric differences: Detailed comparison of each performance metric.
-
-- **Reporting Features:**
-  - Results are saved to CSV files under folder [`/comparison_results`](/comparison_results) for further analysis.
-  - Text reports summarize findings for each scenario.
-  - Runtime performance tracking for both approaches.
+---

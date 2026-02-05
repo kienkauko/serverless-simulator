@@ -8,15 +8,20 @@ class Container:
     # Using itertools for unique container IDs across the system
     id_counter = itertools.count()
 
-    def __init__(self, env, system, server, resource_info):
+    def __init__(self, env, system, server, resource_info, is_cold_start=False):
         self.env = env
         self.state = "Idle" # Initial state
         self.id = next(Container.id_counter)
         self.system = system # Reference back to the main system
         self.server = server
         self.resource_info = resource_info
-        self.cpu_current = resource_info['warm_cpu']
-        self.ram_current = resource_info['warm_ram']
+        # Set initial resources based on whether this is a cold start
+        if is_cold_start:
+            self.cpu_current = resource_info['cold_start_cpu']
+            self.ram_current = resource_info['cold_start_ram']
+        else:
+            self.cpu_current = resource_info['warm_cpu']
+            self.ram_current = resource_info['warm_ram']
         self.cpu_reserve = resource_info['cpu_demand']
         self.ram_reserve = resource_info['ram_demand']
         self.current_request = None

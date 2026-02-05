@@ -1,0 +1,6 @@
+__pycache__
+comparison_results/*.csv
+Markov/__pycache__
+Markov/__init__.py
+multi_test_results
+test
