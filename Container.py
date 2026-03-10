@@ -15,8 +15,9 @@ class Container:
         self.system = system # Reference back to the main system
         self.server = server
         self.resource_info = resource_info
+        self.is_cold_start = is_cold_start
         # Set initial resources based on whether this is a cold start
-        if is_cold_start:
+        if self.is_cold_start:
             self.cpu_current = resource_info['cold_start_cpu']
             self.ram_current = resource_info['cold_start_ram']
         else:
@@ -35,13 +36,11 @@ class Container:
   
     def assign_request(self, request):
 
-        if self.current_request:
-            print(f"FATAL ERROR: {self.env.now:.2f} - {self} trying to assign {request} while already serving {self.current_request}")
-            exit(1) # Should not happen with correct logic
+        # if self.current_request:
+        #     raise RuntimeError(f"{self.env.now:.2f} - {self} trying to assign {request} while already serving {self.current_request}")
 
-        if self.state == "Dead":
-            print(f"{self.env.now:.2f} - ERROR: {self} is dead, cannot assign request {request}")
-            exit(1) # Should not happen with correct logic
+        # if self.state == "Dead":
+        #     raise RuntimeError(f"{self.env.now:.2f} - {self} is dead, cannot assign request {request}")
         # Modify resources in the container
 
         delta_cpu = request.cpu_demand - self.cpu_current
@@ -56,10 +55,7 @@ class Container:
         
         # Attempt to allocate the new resources
         if not self.server.allocate_resources(delta_cpu, delta_ram):
-            print(f"{self.env.now:.2f} - FATAL ERROR: Insufficient resources on {self.server} for {request}")
-            # Release the lock before returning
-            # self.server.resource_lock.release(lock_request)
-            exit(1)
+            raise RuntimeError(f"{self.env.now:.2f} - Insufficient resources on {self.server} for {request}")
         
         if self.system.verbose:
             print(f"{self.env.now:.2f} - {self} allocated resources (CPU:{delta_cpu:.1f}, RAM:{delta_ram:.1f}) for {request} on {self.server}")
@@ -93,19 +89,16 @@ class Container:
         delta_ram = self.ram_current - self.resource_info['warm_ram']
 
         if(delta_cpu < 0 or delta_ram < 0):
-            print(f"FATAL ERROR: {self.env.now:.2f} - {self}, release_request() trying to release more resources than allocated (CPU:{delta_cpu:.1f}, RAM:{delta_ram:.1f})")
-            exit(1)
+            raise RuntimeError(f"{self.env.now:.2f} - {self}, release_request() trying to release more resources than allocated (CPU:{delta_cpu:.1f}, RAM:{delta_ram:.1f})")
 
         # Release resources back to the server
         try:
             self.server.cpu_real += delta_cpu
             self.server.ram_real += delta_ram
             if self.server.cpu_real > self.server.cpu_capacity or self.server.ram_real > self.server.ram_capacity:
-                print(f"FATAL ERROR: {self.env.now:.2f} - {self} released more resources than server capacity (CPU:{self.server.cpu_real:.1f}/{self.server.cpu_capacity:.1f}, RAM:{self.server.ram_real:.1f}/{self.server.ram_capacity:.1f})")
-                exit(1)
+                raise RuntimeError(f"{self.env.now:.2f} - {self} released more resources than server capacity (CPU:{self.server.cpu_real:.1f}/{self.server.cpu_capacity:.1f}, RAM:{self.server.ram_real:.1f}/{self.server.ram_capacity:.1f})")
         except Exception as e:
-            print(f"FATAL ERROR: releasing resources for {self}: {e}")
-            exit(1)
+            raise RuntimeError(f"Releasing resources for {self}: {e}")
 
         # Update the container's allocated resources
         self.cpu_current = self.resource_info['warm_cpu']
@@ -125,11 +118,9 @@ class Container:
     
         # Start the idle timeout process
         if self not in self.system.idle_containers:
-            self.system.container_idle_lifecycle(self)
+            self.release_resources()
         
        
-       
-
     def release_resources(self):
         """Returns allocated CPU and RAM resources back to the server."""
         if self.system.verbose:
@@ -142,15 +133,13 @@ class Container:
         self.state = "Dead"
         self.server.cpu_real += self.cpu_current
         self.server.cpu_reserve += self.cpu_reserve
-        if self.server.cpu_real > self.server.cpu_capacity or self.server.cpu_reserve > self.server.cpu_capacity:
-            print(f"FATAL ERROR: {self.env.now:.2f} - {self} released more CPU than server capacity (CPU:{self.server.cpu_real:.1f}/{self.server.cpu_capacity:.1f})")
-            exit(1)
+        if self.server.cpu_real > self.server.cpu_capacity + 0.1 or self.server.cpu_reserve > self.server.cpu_capacity + 0.1:
+            raise RuntimeError(f"{self.env.now:.2f} - {self} released more CPU than server capacity (CPU:{self.server.cpu_real:.1f}/{self.server.cpu_capacity:.1f})")
         
         self.server.ram_real += self.ram_current
         self.server.ram_reserve += self.ram_reserve
-        if self.server.ram_real > self.server.ram_capacity or self.server.ram_reserve > self.server.ram_capacity:
-            print(f"FATAL ERROR: {self.env.now:.2f} - {self} released more RAM than server capacity (RAM:{self.server.ram_real:.1f}/{self.server.ram_capacity:.1f})")
-            exit(1)
+        if self.server.ram_real > self.server.ram_capacity + 0.1 or self.server.ram_reserve > self.server.ram_capacity + 0.1:
+            raise RuntimeError(f"{self.env.now:.2f} - {self} released more RAM than server capacity (RAM:{self.server.ram_real:.1f}/{self.server.ram_capacity:.1f})")
        
         if self in self.server.containers:
             self.server.containers.remove(self)

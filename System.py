@@ -132,11 +132,9 @@ class System:
                     # Note: server.containers.append is already done in spawn_container_process
                 else:
                     # Container spawn failed
-                    print(f"{self.env.now:.2f} - FATAL ERROR: Container spawn failed on {server}.")
-                    exit(1)
+                    raise RuntimeError(f"{self.env.now:.2f} - Container spawn failed on {server}.")
             else:
-                print(f"{self.env.now:.2f} - FATAL ERROR: No server has enough resources for pre-warming.")
-                exit(1)
+                raise RuntimeError(f"{self.env.now:.2f} - No server has enough resources for pre-warming.")
         print(f"Pre-warming complete. {len(self.idle_containers)} containers are now idle.")
 
     def add_server(self, server):
@@ -198,7 +196,7 @@ class System:
         """Handles an incoming request: waits for an idle container from the pool."""
         
         # Record the time when the request starts waiting for a container
-        request_wait_start_time = self.env.now
+        start_time = self.env.now
         self.increment_waiting()  # Track waiting requests
         # See if there's any Idle_model container
         chosen_container = None
@@ -212,21 +210,20 @@ class System:
                 print(f"{self.env.now:.2f} - Found idle containers, trying to assign request directly.")
             # Pull containers until we find one in the right idle state
            
-            assignment_ok = container.assign_request(request)
-            if not assignment_ok:
-                print(f"{self.env.now:.2f} - FATAL ERROR: Assignment to {container} failed.")
-                exit(1)
-            # record wait time
-            total_wait = self.env.now - request_wait_start_time
-            request.wait_time = total_wait
-            self.decrement_waiting()
-            # Only update latency statistics when system is stable
-            if self.env.now > 0:
-                self.latency_stats['waiting_time'] += total_wait
-            if self.verbose:
-                print(f"{self.env.now:.2f} - {request} waited {total_wait:.2f}")
+            # assignment_ok = container.assign_request(request)
+            # if not assignment_ok:
+            #     raise RuntimeError(f"{self.env.now:.2f} - Assignment to {container} failed.")
+            # # record wait time
+            # total_wait = self.env.now - request_wait_start_time
+            # request.wait_time = total_wait
+            # self.decrement_waiting()
+            # # Only update latency statistics when system is stable
+            # if self.env.now > 0:
+            #     self.latency_stats['waiting_time'] += total_wait
+            # if self.verbose:
+            #     print(f"{self.env.now:.2f} - {request} waited {total_wait:.2f}")
             # start service
-            self.env.process(self.container_service_lifecycle(container))
+            self.env.process(self.container_service_lifecycle(request, container, start_time))
             return
 
         # if no idle_model or idle_cpu containers found, execution will fall through
@@ -250,28 +247,26 @@ class System:
                     # Container spawned successfully, assign the request directly
                     self.request_stats['container_spawns_succeeded'] += 1
                     # Start the assignment process
-                    assignment_result = spawned_container.assign_request(request)
-                    if assignment_result:
-                        # Calculate waiting time
-                        total_wait_time = self.env.now - request_wait_start_time
-                        # Update request status and counters
-                        request.wait_time = total_wait_time
-                        self.decrement_waiting()
+                    # assignment_result = spawned_container.assign_request(request)
+                    # if assignment_result:
+                    #     # Calculate waiting time
+                    #     total_wait_time = self.env.now - request_wait_start_time
+                    #     # Update request status and counters
+                    #     request.wait_time = total_wait_time
+                    #     self.decrement_waiting()
                         
-                        # Update statistics
-                        if self.env.now > 0:
-                            self.latency_stats['waiting_time'] += total_wait_time
+                    #     # Update statistics
+                    #     if self.env.now > 0:
+                    #         self.latency_stats['waiting_time'] += total_wait_time
                         
                         # Start the service process
-                        self.env.process(self.container_service_lifecycle(spawned_container))
-                        return
-                    else:
-                        print(f"{self.env.now:.2f} - ERROR: Assignment to newly spawned container failed.")
-                        exit(1)
+                    self.env.process(self.container_service_lifecycle(request, spawned_container, start_time))
+                    return
+                    # else:
+                    #     raise RuntimeError(f"{self.env.now:.2f} - Assignment to newly spawned container failed.")
                 else:
                     # Container spawn failed
-                    print(f"{self.env.now:.2f} - FATAL ERROR: Container spawn failed on {server}.")
-                    exit(1)
+                    raise RuntimeError(f"{self.env.now:.2f} - Container spawn failed on {server}.")
             else:
                 # No server has enough resources
                 if self.verbose:
@@ -362,17 +357,29 @@ class System:
             #         pass
             self.env.exit(None)  # Signal spawn failure
 
-    def container_service_lifecycle(self, container):
+    def container_service_lifecycle(self, request, container, start_time):
         """Simulates the request processing time within a container."""
-        if not container.current_request:
-            print(f"ERROR: {self.env.now:.2f} - container_service_lifecycle called for {container} with no request!")
-            return
+        assignment_ok = container.assign_request(request)
+        if not assignment_ok:
+            raise RuntimeError(f"{self.env.now:.2f} - Assignment to {container} failed.")
+        # record wait time
+        total_wait = self.env.now - start_time
+        request.wait_time = total_wait
+        self.decrement_waiting()
+        # Only update latency statistics when system is stable
+        if self.env.now > 0:
+            self.latency_stats['waiting_time'] += total_wait
+        if self.verbose:
+            print(f"{self.env.now:.2f} - {request} waited {total_wait:.2f}")
+        
+        # if not container.current_request:
+        #     print(f"ERROR: {self.env.now:.2f} - container_service_lifecycle called for {container} with no request!")
+        #     return
 
-        request = container.current_request
+        # request = container.current_request
 
         # if self.distribution == 'exponential':
                 # Exponentially distributed spawn time
-        service_time = random.expovariate(self.service_rate)
         # else:
         #     service_time = self.service_rate  # Deterministic service time equal to the mean
             
@@ -381,6 +388,7 @@ class System:
         # Update the request's state to "Running" when service starts
         container.state = "Active"
         self.increment_processing()  # Using the new method to track processing time
+        service_time = random.expovariate(self.service_rate)
         yield self.env.timeout(service_time)
         # Record end service time for request
         request.end_service_time = self.env.now
@@ -411,15 +419,15 @@ class System:
         
         # Record successful request information
 
-    def container_idle_lifecycle(self, container):
-        """Manages the idle timeout for a container."""
-        if self.verbose:
-            print(f"{self.env.now:.2f} - Idle timeout reached for {container}. Removing it.")
+    # def container_idle_lifecycle(self, container):
+    #     """Manages the idle timeout for a container."""
+    #     if self.verbose:
+    #         print(f"{self.env.now:.2f} - Idle timeout reached for {container}. Removing it.")
         
-        self.request_stats['containers_removed_idle'] += 1
-        # Mark container as dead and release resources
-        container.state = "Dead"  # Mark as expired
-        container.release_resources()
+    #     self.request_stats['containers_removed_idle'] += 1
+    #     # Mark container as dead and release resources
+    #     container.state = "Dead"  # Mark as expired
+    #     container.release_resources()
 
     def update_waiting_stats(self):
         """Update time-weighted statistics for waiting requests."""
