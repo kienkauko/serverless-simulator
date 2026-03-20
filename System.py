@@ -103,23 +103,20 @@ class System:
             return
         
         # Delegate request handling to the LoadBalancer with viable cluster options
-        handle_request_process = self.load_balancer.handle_request(request, target_clusters)
-        assignment_result, container, cluster = yield self.env.process(handle_request_process)
-        
+        assignment_result, container, cluster = yield from self.load_balancer.handle_request(request, target_clusters)
+
         # If assignment was successful, process the service
         if assignment_result:
             # Create the first transmission - upload data to container
-            # Note: make_paths/remove_paths are now handled automatically in update_request_delay
-            yield self.env.process(self.topology.update_request_delay(request, \
-                                    target_clusters[cluster], type='upload'))
+            yield from self.topology.update_request_delay(request, \
+                                    target_clusters[cluster], type='upload')
 
             # Start processing the request in the container
-            yield self.env.process(container.process_request())
+            yield from container.process_request()
 
             # Create the second transmission - download data from container
-            # Note: make_paths/remove_paths are now handled automatically in update_request_delay
-            yield self.env.process(self.topology.update_request_delay(request, \
-                                    target_clusters[cluster], type='download'))
+            yield from self.topology.update_request_delay(request, \
+                                    target_clusters[cluster], type='download')
 
             # Start the idle timeout process 
             container.idle_timeout_process = self.env.process(container.idle_lifecycle())

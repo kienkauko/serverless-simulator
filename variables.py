@@ -56,6 +56,7 @@ CLUSTER_STRATEGY = "centralized_cloud"  # Options: "massive_edge", "massive_edge
 # CENTRAL_CLOUD_NODE = "12876"  # Central cloud node ID in the topology
 EDGE_SERVER_NUMBER = 15000  # CPU capacity for all MECs
 NUM_DC_PER_RING = 2  # Number of edge DCs per ring (used if strategy is 'x_per_ring')
+PATH_CACHE_MAX_SIZE = 10000  # Maximum entries in topology path caches (LRU eviction)
 # CLOUD_SPAWN_TIME_FACTOR = 0.5  # Cloud spawn time multiplier (faster)
 # CLOUD_PROCESSING_TIME_FACTOR = 0.6  # Cloud processing time multiplier (faster)
 # Define Ingress nodes for custom ingress defined in define_ingress_nodes() in Topology.py
@@ -83,7 +84,7 @@ LINK_UTILIZATION = {
 }
 
 # Traffic intensity factor to scale arrival rates based on node population
-REQ_PER_PERSON = 1  # Adjust this factor to scale overall traffic, default: 0.0001, set to 1 to get the population
+REQ_PER_PERSON = 0.0001  # Adjust this factor to scale overall traffic, default: 0.0001, set to 1 to get the population
 # NODE_INTENSITY = 10  # Percentage of level 3 nodes generating traffic (0-100)
 # Application definitions for heterogeneous workloads
 APPLICATIONS = {

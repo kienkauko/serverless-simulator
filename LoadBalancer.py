@@ -115,7 +115,7 @@ class LoadBalancer:
             # No idle containers available, let the scheduler handle container spawning
             scheduler = self.schedulers[cluster_name]
             # path = paths.get(selected_cluster) if paths else None
-            spawn_result, container = yield self.env.process(scheduler.spawn_container_for_request(request, self.system))            
+            spawn_result, container = yield from scheduler.spawn_container_for_request(request, self.system)
             
             if spawn_result:
                 return True, container, cluster

@@ -79,7 +79,7 @@ class Scheduler(abc.ABC):
             variables.app_stats[request.app_id]['container_spawns_initiated'] += 1
             
             # Start the spawn process (now passing cluster_name)
-            container = yield self.env.process(server.spawn_container_process(system, request))
+            container = yield from server.spawn_container_process(system, request)
             container.time_out = self.idle_timeout_cluster[container.app_id]
             return True, container
         else:
