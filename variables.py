@@ -84,7 +84,7 @@ LINK_UTILIZATION = {
 }
 
 # Traffic intensity factor to scale arrival rates based on node population
-REQ_PER_PERSON = 0.0001  # Adjust this factor to scale overall traffic, default: 0.0001, set to 1 to get the population
+REQ_PER_PERSON = 0.001  # Adjust this factor to scale overall traffic, default: 0.0001, set to 1 to get the population
 # NODE_INTENSITY = 10  # Percentage of level 3 nodes generating traffic (0-100)
 # Application definitions for heterogeneous workloads
 APPLICATIONS = {

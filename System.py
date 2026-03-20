@@ -1,7 +1,7 @@
 import simpy
 import random
 import itertools
-import pandas as pd
+import csv
 import os
 import variables
 from Request import Request
@@ -207,23 +207,23 @@ class System:
             # app_latency_stats[request.app_id]['count'] += 1
 
     def flush_latencies(self):
-        """Writes buffered latencies to the parquet file and clears the buffer."""
+        """Writes buffered latencies to a CSV file and clears the buffer."""
         columns = ['origin_node', 'arrival_time', 'network_delay', 'spawn_time', 'total_latency', 'bottleneck']
-        df = pd.DataFrame(variables.accepted_request_latencies, columns=columns)
-        
+        # Switch trace_path extension to .csv
+        csv_path = os.path.splitext(self.trace_path)[0] + '.csv'
+
         try:
-            # Use fastparquet for appending if possible
-            if not os.path.exists(self.trace_path):
-                df.to_parquet(self.trace_path, engine='fastparquet', index=False)
-            else:
-                df.to_parquet(self.trace_path, engine='fastparquet', append=True, index=False)
-            
-            print(f"Flushed {len(df)} records to {self.trace_path}")
+            file_exists = os.path.exists(csv_path)
+            with open(csv_path, 'a', newline='') as f:
+                writer = csv.writer(f)
+                if not file_exists:
+                    writer.writerow(columns)
+                writer.writerows(variables.accepted_request_latencies)
+
+            print(f"Flushed {len(variables.accepted_request_latencies)} records to {csv_path}")
             variables.accepted_request_latencies.clear()
-            
+
         except Exception as e:
-            print(f"Error flushing latencies to parquet: {e}")
-            # If fastparquet is missing or fails, we might want to try pyarrow with a different strategy
-            # or just print the error. For now, we print the error.
+            print(f"Error flushing latencies to CSV: {e}")
 
 

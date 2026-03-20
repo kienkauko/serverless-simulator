@@ -3,7 +3,15 @@ import json
 import math
 import random
 from collections import OrderedDict
-from pyproj import Transformer
+# Pure-Python EPSG:3857 (Web Mercator) to EPSG:4326 (WGS84) conversion
+# Replaces pyproj for PyPy compatibility
+_MERCATOR_MAX = 20037508.342789244
+
+def _epsg3857_to_4326(x, y):
+    """Convert EPSG:3857 coordinates to EPSG:4326 (lon, lat in degrees)."""
+    lon = x * 180.0 / _MERCATOR_MAX
+    lat = math.degrees(math.atan(math.sinh(y * math.pi / _MERCATOR_MAX)))
+    return lon, lat
 from Cluster import Cluster
 from FlowState import FlowState
 import variables
@@ -22,8 +30,7 @@ class Topology:
         print(f"Initializing topology..."
               f"population factor enabled: {variables.POPULATION_SCALE_ENABLE}, "
               f"link utilization enabled: {self.link_util_enable}")
-        # Initialize Transformer for later propagation delay calculations
-        self.transformer = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
+        # Coordinate conversion handled by pure-Python _epsg3857_to_4326()
 
         # Initialize graph
         self.graph = nx.DiGraph()
@@ -226,9 +233,9 @@ class Topology:
         loc1 = self.graph.nodes[node1]['location']
         loc2 = self.graph.nodes[node2]['location']
         
-        # OPTIMIZATION: Use pre-initialized transformer
-        lon1, lat1 = self.transformer.transform(loc1[0], loc1[1])
-        lon2, lat2 = self.transformer.transform(loc2[0], loc2[1])
+        # Pure-Python coordinate conversion (PyPy compatible)
+        lon1, lat1 = _epsg3857_to_4326(loc1[0], loc1[1])
+        lon2, lat2 = _epsg3857_to_4326(loc2[0], loc2[1])
         
         # Calculate distance using Haversine formula (great-circle distance)
         # Earth radius in kilometers
