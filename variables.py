@@ -11,15 +11,15 @@ USE_TOPOLOGY = False  # New flag to enable/disable topology routing
 config = {
     # System Parameters
     "system": {
-        "num_servers": 100,
-        "sim_time": 9000,
+        "num_servers": 2,
+        "sim_time": 5000,
         "verbose": False,
-        "warm_percent": 0.1,  # Percentage of warm containers
+        "warm_percent": 0.5,  # Percentage of warm containers
     },
     "distribution": {
         "spawn-distribution": "exponential",  # Options: "deterministic", "lognormal", "exponential"
         "arrival-distribution": "exponential",  # Options: "deterministic", "weibull", "exponential
-        "service-distribution": "exponential",  # Options:  "exponential 
+        "service-distribution": "traces",  # Options: "exponential", "traces"
     },
     # Server Parameters
     "server": {
@@ -32,8 +32,8 @@ config = {
     # Request Parameters
     "request": {
         "arrival_rate_mean": 50,  # Average requests per time unit (lambda for M)
-        "arrival_rate_std": 20,   # Stddev for arrival rate 
-        "service_rate": 1,  # Average service completions per time unit (mu for M)
+        "arrival_rate_std": 0,   # Stddev for arrival rate 
+        "service_rate": 10,  # Average service completions per time unit (mu for M)
         # CPU and RAM demands - fixed values instead of ranges
         "warm_cpu": 0.48,
         "warm_ram": 2.10,

@@ -2,6 +2,8 @@ import simpy
 import random
 import itertools
 import math  # Added for sine calculations in day-night pattern
+import os
+import csv
 from variables import *
 from Request import Request
 from Container import Container
@@ -30,6 +32,9 @@ class System:
         self.spawn_time_std = config["container"]["spawn_time_std"]
         
         self.distribution = distribution  # Dictionary with distribution types
+        self.service_distribution = self.distribution.get("service-distribution", "exponential")
+        self.service_trace_times = []
+        self.service_trace_index = 0
         self.pattern_type = pattern_type  # Traffic pattern type: 'poisson' or 'day_night'
         self.verbose = verbose  # Flag to control logging output
         self.req_id_counter = itertools.count()
@@ -48,6 +53,8 @@ class System:
             self.spawn_lognormal_mu, self.spawn_lognormal_sigma = lognormal_params_from_mean_std(
                 self.spawn_time_mean, self.spawn_time_std
             )
+        if self.service_distribution == "traces":
+            self.load_service_traces()
         
 
         
@@ -99,8 +106,48 @@ class System:
             'waiting_time': 0.0,      # Total waiting time (container wait + assignment)
             'container_wait_time': 0.0, # Time waiting for an idle container
             'assignment_time': 0.0,   # Time for the assignment process
-            'count': 0
+            'count': 0,
+            'total_latency_sq': 0.0,  # Sum of squared latencies for variance: E[B_r^2]
+            'all_latencies': [],      # All individual latencies for tail-latency percentiles
         }
+
+    def load_service_traces(self):
+        """Load service-time traces from COCO results CSV and convert ms -> s."""
+        traces_path = os.path.join(os.path.dirname(__file__), "traces", "coco2017_results.csv")
+        loaded = []
+
+        try:
+            with open(traces_path, "r", newline="", encoding="utf-8") as csvfile:
+                reader = csv.DictReader(csvfile)
+                for row in reader:
+                    value_ms = row.get("processing_time_ms")
+                    if value_ms is None:
+                        continue
+                    try:
+                        value_s = float(value_ms) / 1000.0
+                        if value_s > 0:
+                            loaded.append(value_s)
+                    except (TypeError, ValueError):
+                        continue
+        except FileNotFoundError:
+            raise RuntimeError(f"Service trace file not found: {traces_path}")
+
+        if not loaded:
+            raise RuntimeError(
+                f"No valid processing_time_ms values found in trace file: {traces_path}"
+            )
+
+        self.service_trace_times = loaded
+        self.service_trace_index = 0
+
+    def get_next_trace_service_time(self):
+        """Return next trace service time in seconds, cycling when reaching the end."""
+        if not self.service_trace_times:
+            raise RuntimeError("Service trace list is empty while service-distribution='traces'.")
+
+        service_time = self.service_trace_times[self.service_trace_index]
+        self.service_trace_index = (self.service_trace_index + 1) % len(self.service_trace_times)
+        return service_time
     
     def calculate_warm_number(self, config):
         warm_percent = config["system"]["warm_percent"]
@@ -186,6 +233,8 @@ class System:
             # Get fixed CPU and RAM values from config
             resource_demand = self.config["request"]
             request = Request(req_id, arrival_time, resource_demand)
+            if self.service_distribution == "traces":
+                request.service_time = self.get_next_trace_service_time()
             self.request_stats['generated'] += 1
             if self.verbose:
                 print(f"{self.env.now:.2f} - Request Generated: {request}")
@@ -208,22 +257,8 @@ class System:
         if chosen_container:
             if self.verbose:
                 print(f"{self.env.now:.2f} - Found idle containers, trying to assign request directly.")
-            # Pull containers until we find one in the right idle state
-           
-            # assignment_ok = container.assign_request(request)
-            # if not assignment_ok:
-            #     raise RuntimeError(f"{self.env.now:.2f} - Assignment to {container} failed.")
-            # # record wait time
-            # total_wait = self.env.now - request_wait_start_time
-            # request.wait_time = total_wait
-            # self.decrement_waiting()
-            # # Only update latency statistics when system is stable
-            # if self.env.now > 0:
-            #     self.latency_stats['waiting_time'] += total_wait
-            # if self.verbose:
-            #     print(f"{self.env.now:.2f} - {request} waited {total_wait:.2f}")
-            # start service
-            self.env.process(self.container_service_lifecycle(request, container, start_time))
+            chosen_container.state = "Pending"  # Mark as Pending to prevent other requests from taking it
+            self.env.process(self.container_service_lifecycle(request, chosen_container, start_time))
             return
 
         # if no idle_model or idle_cpu containers found, execution will fall through
@@ -246,20 +281,7 @@ class System:
                 if spawned_container:
                     # Container spawned successfully, assign the request directly
                     self.request_stats['container_spawns_succeeded'] += 1
-                    # Start the assignment process
-                    # assignment_result = spawned_container.assign_request(request)
-                    # if assignment_result:
-                    #     # Calculate waiting time
-                    #     total_wait_time = self.env.now - request_wait_start_time
-                    #     # Update request status and counters
-                    #     request.wait_time = total_wait_time
-                    #     self.decrement_waiting()
-                        
-                    #     # Update statistics
-                    #     if self.env.now > 0:
-                    #         self.latency_stats['waiting_time'] += total_wait_time
-                        
-                        # Start the service process
+                    # Start the service process
                     self.env.process(self.container_service_lifecycle(request, spawned_container, start_time))
                     return
                     # else:
@@ -371,24 +393,17 @@ class System:
             self.latency_stats['waiting_time'] += total_wait
         if self.verbose:
             print(f"{self.env.now:.2f} - {request} waited {total_wait:.2f}")
-        
-        # if not container.current_request:
-        #     print(f"ERROR: {self.env.now:.2f} - container_service_lifecycle called for {container} with no request!")
-        #     return
 
-        # request = container.current_request
-
-        # if self.distribution == 'exponential':
-                # Exponentially distributed spawn time
-        # else:
-        #     service_time = self.service_rate  # Deterministic service time equal to the mean
-            
-        if self.verbose:
-            print(f"{self.env.now:.2f} - {request} starting service in {container}. Expected duration: {service_time:.2f}")
         # Update the request's state to "Running" when service starts
         container.state = "Active"
         self.increment_processing()  # Using the new method to track processing time
-        service_time = random.expovariate(self.service_rate)
+        if self.service_distribution == "traces":
+            service_time = request.service_time
+        else:
+            service_time = random.expovariate(self.service_rate)
+
+        if self.verbose:
+            print(f"{self.env.now:.2f} - {request} starting service in {container}. Expected duration: {service_time:.2f}")
         yield self.env.timeout(service_time)
         # Record end service time for request
         request.end_service_time = self.env.now
@@ -406,6 +421,8 @@ class System:
         # Update global latency stats
         if self.env.now > 0:
             self.latency_stats['total_latency'] += total_latency
+            self.latency_stats['total_latency_sq'] += total_latency ** 2
+            self.latency_stats['all_latencies'].append(total_latency)
             self.latency_stats['spawning_time'] += request.spawn_time
             self.latency_stats['processing_time'] += processing_time
             self.latency_stats['count'] += 1

@@ -36,21 +36,12 @@ class Container:
   
     def assign_request(self, request):
 
-        # if self.current_request:
-        #     raise RuntimeError(f"{self.env.now:.2f} - {self} trying to assign {request} while already serving {self.current_request}")
-
-        # if self.state == "Dead":
-        #     raise RuntimeError(f"{self.env.now:.2f} - {self} is dead, cannot assign request {request}")
-        # Modify resources in the container
-
         delta_cpu = request.cpu_demand - self.cpu_current
         delta_ram = request.ram_demand - self.ram_current
+
         if self.system.verbose:
             print(f"{self.env.now:.2f} - {self} request asks for more resources (+CPU:{delta_cpu:.1f}, +RAM:{delta_ram:.1f})")
         
-        # lock_request = self.server.resource_lock.request()
-        # yield lock_request           
-        # Update resource statistics before changing resource allocation
         self.system.update_resource_stats()
         
         # Attempt to allocate the new resources
@@ -59,9 +50,6 @@ class Container:
         
         if self.system.verbose:
             print(f"{self.env.now:.2f} - {self} allocated resources (CPU:{delta_cpu:.1f}, RAM:{delta_ram:.1f}) for {request} on {self.server}")
-
-        # Release the lock after successful allocation
-        # self.server.resource_lock.release(lock_request)
 
         # Update the container's allocated resources
         self.cpu_current = request.cpu_demand

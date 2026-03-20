@@ -86,6 +86,18 @@ if system.latency_stats['count'] > 0:
     avg_container_wait = system.latency_stats['container_wait_time'] / system.latency_stats['count']
     avg_assignment = system.latency_stats['assignment_time'] / system.latency_stats['count']
     
+    # Variance: Var[B_r] = E[B_r^2] - (E[B_r])^2
+    e_br2 = system.latency_stats['total_latency_sq'] / system.latency_stats['count']
+    var_latency = e_br2 - avg_total ** 2
+    std_latency = var_latency ** 0.5 if var_latency >= 0 else 0.0
+
+    # Tail latency percentiles from individual records
+    import numpy as np
+    all_lat = system.latency_stats['all_latencies']
+    p50 = float(np.percentile(all_lat, 50))
+    p95 = float(np.percentile(all_lat, 95))
+    p99 = float(np.percentile(all_lat, 99))
+
     print("\n--- Average Latencies ---")
     print(f"Total End-to-End Latency: {avg_total:.2f}s")
     print(f"Container Spawn Time: {avg_spawn:.2f}s")
@@ -93,6 +105,11 @@ if system.latency_stats['count'] > 0:
     print(f"  - Container Wait: {avg_container_wait:.2f}s")
     print(f"  - Assignment Time: {avg_assignment:.2f}s")
     print(f"Processing Time: {avg_proc:.2f}s")
+    print(f"Variance of Latency: {var_latency:.4f}s²")
+    print(f"Std Dev of Latency:  {std_latency:.4f}s")
+    print(f"P50 (Median) Latency: {p50:.4f}s")
+    print(f"P95 Latency:          {p95:.4f}s")
+    print(f"P99 Latency:          {p99:.4f}s")
 
 # Calculate Little's Law metrics
 if system.env.now > 0:

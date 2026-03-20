@@ -10,6 +10,7 @@ import networkx as nx  # For the magic
 import matplotlib.pyplot as plt  # For plotting
 import numpy as np
 from scipy import linalg
+from scipy.optimize import brentq
 import math
 # from graph import draw_graph_updated
 
@@ -24,6 +25,7 @@ class MarkovModel():
         self._alpha = 1/(1/config["spawn_rate"] + 1/config["mu"])
         print(f"Alpha: {self._alpha}")
         self._spawn_rate = config["spawn_rate"]
+        self._spawn_distribution = config.get("spawn_distribution", "exponential")
         self._max_queue_warm = config["queue_warm"]
         self._max_queue_cold = config["queue_cold"]
         self._ram_warm = config["ram_warm"]
@@ -59,8 +61,8 @@ class MarkovModel():
         
         waiting = [(0,0)]
         visited = []
-        string_lambda = '$\lambda$'
-        string_mu = "$\mu$"
+        string_lambda = r'$\lambda$'
+        string_mu = r"$\mu$"
         string_alpha = "$\\alpha$"
 
         while len(waiting)>0:
@@ -212,7 +214,7 @@ class MarkovModel():
         for s in self._n2i:
             if s[0] == self._max_queue_warm and s[1] == self._max_queue_cold:
                 blocking_states.append(s)
-        print("BLOCKING STATE", s)
+        # print("BLOCKING STATE", s)
         return blocking_states
 
     def _compute_blocking_ratio(self):
@@ -272,7 +274,132 @@ class MarkovModel():
     def _compute_latency(self, waiting_requests, effective_arrival_rate):
         # apply Little Law here
         return waiting_requests/effective_arrival_rate
-    
+
+    def _compute_p_warm_cold(self):
+        """
+        Compute probabilities that an admitted (non-blocked) request
+        is served by a warm function (p_w) or cold-started (p_c).
+        
+        p_w = P(warm) / (1 - p_b)
+        p_c = P(cold) / (1 - p_b)
+        """
+        p_b = self._compute_blocking_ratio()
+        nw = self._max_queue_warm
+        nc = self._max_queue_cold
+        
+        # P(warm): arrival finds warm pool not full
+        P_warm = 0.0
+        for i in range(nw):  # i = 0 to n_w - 1
+            for j in range(nc + 1):  # j = 0 to n_c
+                P_warm += self._state_probabilities[i, j]
+        
+        # P(cold): warm pool full but cold pool not full
+        P_cold = 0.0
+        for j in range(nc):  # j = 0 to n_c - 1
+            P_cold += self._state_probabilities[nw, j]
+        
+        if p_b < 1.0:
+            p_w = P_warm / (1.0 - p_b)
+            p_c = P_cold / (1.0 - p_b)
+        else:
+            p_w = 0.0
+            p_c = 0.0
+        
+        return p_w, p_c
+
+    def _compute_variance_latency(self):
+        """
+        Compute Var[B_r] using the law of total variance (mixture approach).
+        
+        B_r is a mixture:
+          - B_w           with prob p_w (warm-served)
+          - B_c + B_w     with prob p_c (cold-started)
+        
+        Var[B_r] = p_w * Var[B_w] + p_c * Var[B_c + B_w] + p_w * p_c * (E[B_c])^2
+        
+        Depends on spawn_distribution:
+          - "exponential" (M): Var[B_c] = (E[B_c])^2
+            => Var[B_r] = 1/mu^2 + p_c*(2 - p_c)*(E[B_c])^2
+          - "deterministic" (D): Var[B_c] = 0
+            => Var[B_r] = 1/mu^2 + p_w*p_c*(E[B_c])^2
+        """
+        p_w, p_c = self._compute_p_warm_cold()
+        mu = self._mu
+        E_Bc = 1.0 / self._spawn_rate
+        
+        Var_Bw = 1.0 / (mu ** 2)  # Var of Exp(mu)
+        
+        if self._spawn_distribution == "deterministic":
+            # D case: Var[B_c] = 0, so Var[B_c + B_w] = Var[B_w]
+            Var_Bc_Bw = Var_Bw
+        else:
+            # M case: Var[B_c] = E[B_c]^2, so Var[B_c + B_w] = E[B_c]^2 + Var[B_w]
+            Var_Bc_Bw = E_Bc ** 2 + Var_Bw
+        
+        # Law of total variance:
+        # within-component + between-component
+        variance = p_w * Var_Bw + p_c * Var_Bc_Bw + p_w * p_c * (E_Bc ** 2)
+        
+        return variance
+
+    def _response_time_cdf(self, t):
+        """
+        CDF of response time for served (non-blocked) requests.
+        
+        F_{B_r}(t) = p_w * F_{B_w}(t) + p_c * F_{B_c + B_w}(t)
+        
+        Where F_{B_c + B_w}(t) depends on spawn_distribution:
+          - "exponential": hypoexponential CDF
+          - "deterministic": shifted exponential CDF
+        """
+        p_w, p_c = self._compute_p_warm_cold()
+        mu = self._mu
+        mu_c = self._spawn_rate  # cold-start rate
+        
+        # Warm path: exponential CDF
+        F_warm = 1.0 - np.exp(-mu * t)
+        
+        # Cold path CDF
+        if self._spawn_distribution == "deterministic":
+            d = 1.0 / mu_c  # deterministic cold-start duration
+            if t < d:
+                F_cold = 0.0
+            else:
+                F_cold = 1.0 - np.exp(-mu * (t - d))
+        else:
+            # Hypoexponential: sum of two independent exponentials
+            if abs(mu - mu_c) > 1e-10:
+                F_cold = (1.0 
+                          - (mu / (mu - mu_c)) * np.exp(-mu_c * t) 
+                          + (mu_c / (mu - mu_c)) * np.exp(-mu * t))
+            else:
+                # Special case mu == mu_c: Erlang-2
+                F_cold = 1.0 - (1.0 + mu * t) * np.exp(-mu * t)
+        
+        return p_w * F_warm + p_c * F_cold
+
+    def _compute_tail_latency(self, p=0.99):
+        """
+        Compute the p-th percentile of response time by solving F_{B_r}(t_p) = p.
+        
+        Args:
+            p (float): Percentile, e.g. 0.95 for P95, 0.99 for P99.
+        
+        Returns:
+            float: t_p such that P(B_r <= t_p) = p
+        """
+        mu = self._mu
+        mu_c = self._spawn_rate
+        # Upper bound for root search
+        t_max = 50.0 * (1.0 / mu + 1.0 / mu_c)
+        
+        try:
+            t_p = brentq(lambda t: self._response_time_cdf(t) - p, 1e-10, t_max)
+        except ValueError:
+            t_p = float('inf')
+        
+        return t_p
+
     def _compute_cpu_usage(self):
         return np.sum([((s[0] + s[2])*self._cpu_warm + s[1]*self._cpu_active)*self._state_probabilities[s] for s in self._n2i.keys()])
     
@@ -345,6 +472,12 @@ class MarkovModel():
         cpu_usage = self._compute_resource_usage("cpu")
         ram_usage = self._compute_resource_usage("ram")
         power_usage = self._computer_power_usage(cpu_usage)
+        variance_latency = self._compute_variance_latency()
+        std_latency = np.sqrt(max(variance_latency, 0))
+        p_w, p_c = self._compute_p_warm_cold()
+        p50 = self._compute_tail_latency(0.50)
+        p95 = self._compute_tail_latency(0.95)
+        p99 = self._compute_tail_latency(0.99)
         # cpu_usage = self._compute_cpu_usage()
         # ram_usage = self._compute_ram_usage()
         # cpu_usage_per_request = cpu_usage/total_requests
@@ -354,6 +487,13 @@ class MarkovModel():
             "blocking_ratios": [block_ratio],
             "requests_in_system": [requests_in_system],
             "latency": [latency],
+            "variance_latency": [variance_latency],
+            "std_latency": [std_latency],
+            "p_warm": [p_w],
+            "p_cold": [p_c],
+            "p50_latency": [p50],
+            "p95_latency": [p95],
+            "p99_latency": [p99],
             "cpu_usage": [cpu_usage],
             "ram_usage": [ram_usage],
             "power_usage": [power_usage],
@@ -604,11 +744,12 @@ def my_draw_networkx_edge_labels(
 if __name__=="__main__":
     config = {
         "lam": 50,
-        "mu": 1/10,
+        "mu": 10,
         "spawn_rate": 1/6.05,
         "queue_warm":5, # queue
         "queue_cold": 5, # queue
         "serving_time": "exponential",
+        "spawn_distribution": "exponential",  # "exponential" or "deterministic"
         "arrivals": "exponential",
         # "lam_factor": 1,
         "ram_warm": 2.10,
