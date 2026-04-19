@@ -34,7 +34,9 @@ class MarkovModel():
         self._cpu_active = config["cpu_demand"]
         self._peak_power = config["peak_power"]
         self._power_scale = config["power_scale"]
-        
+        self._cpu_cold = config["cpu_cold"]
+        self._ram_cold = config["ram_cold"]
+
         self._G = self.build_graph()
         if self._verbose:
             print("Markov: Computing probabilities...")
@@ -239,11 +241,11 @@ class MarkovModel():
         if resource == "cpu":
             active = self._cpu_active
             warm = self._cpu_warm
-            transit = 3.22
+            transit = self._cpu_cold
         elif resource == "ram":
             active = self._ram_active
             warm = self._ram_warm
-            transit = warm
+            transit = self._ram_cold
         else:
             raise ValueError("Resource must be either 'cpu' or 'ram'")
         
@@ -754,6 +756,8 @@ if __name__=="__main__":
         # "lam_factor": 1,
         "ram_warm": 2.10,
         "cpu_warm": 0.48,
+        "ram_cold": 3.50,
+        "cpu_cold": 1.20,
         "ram_demand": 4.28,
         "cpu_demand": 17.80,
         "peak_power": 150.0,

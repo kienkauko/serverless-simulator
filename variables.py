@@ -2,7 +2,7 @@ import random
 import math
 # --- Configuration ---
 RANDOM_SEED = 42
-SIM_TIME = 9000  # Simulation time units (e.g., seconds)
+SIM_TIME = 10000  # Simulation time units (e.g., seconds)
 
 # Topology configuration
 USE_TOPOLOGY = False  # New flag to enable/disable topology routing

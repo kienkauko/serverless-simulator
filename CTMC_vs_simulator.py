@@ -14,6 +14,7 @@ import simpy
 import sys
 import os
 from datetime import datetime
+from scipy import stats
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -33,7 +34,7 @@ ram_warm = 30
 cpu_demand = 50
 ram_demand = 40
 
-def generate_test_cases(num_cases=500):
+def generate_test_cases(num_cases=100):
     """Generate test cases covering a wide range of scenarios, including
     extreme cases that stress the independence assumption.
 
@@ -222,6 +223,8 @@ def convert_to_markov_config(test_case):
         "arrivals": "exponential",
         "ram_warm": ram_warm,
         "cpu_warm": cpu_warm,
+        "ram_cold": ram_warm,
+        "cpu_cold": cpu_warm,
         "ram_demand": ram_demand,
         "cpu_demand": cpu_demand,
         "peak_power": 150.0,
@@ -419,92 +422,126 @@ def calculate_comparison_metrics(markov_results, sim_results):
 
 def main():
     """Main comparison function"""
+    NUM_SIM_REPLICATIONS = 20
+    CI_LEVEL = 0.95
+
     print("Starting Markov Model vs Simulator Comparison")
+    print(f"  Simulation replications per scenario: {NUM_SIM_REPLICATIONS}")
+    print(f"  Confidence level: {CI_LEVEL*100:.0f}%")
     print("=" * 60)
-    
+
     # Generate test cases
-    test_cases = generate_test_cases(500)
+    test_cases = generate_test_cases(100)
     print(f"Generated {len(test_cases)} test cases")
-    
+
     # Store results
     markov_results = []
-    sim_results = []
+    sim_results = []  # stores the mean across replications
     detailed_results = []
-    
+
+    metrics_list = ['blocking_probability', 'latency', 'variance_latency',
+                    'p99_latency', 'cpu_usage', 'ram_usage', 'power_usage']
+
     # Run comparisons
     for i, test_case in enumerate(test_cases):
         print(f"\nRunning test case {i+1}/{len(test_cases)}")
         print(f"Parameters: λ={test_case['arrival_rate']:.1f}, μ={test_case['service_rate']:.1f}, "
               f"servers={test_case['num_servers']}, warm%={test_case['warm_percent']:.1f}, "
               f"spawn_time={test_case['spawn_time']}")
-        
+
         # Convert to respective configurations
         markov_config = convert_to_markov_config(test_case)
         sim_config = convert_to_simulator_config(test_case)
-        
-        # Run Markov model
+
+        # Run Markov model (deterministic — only once)
         print("  Running Markov model...")
         markov_result = run_markov_model(markov_config)
-        
-        # Run simulator
-        print("  Running simulator...")
-        sim_result = run_simulator(sim_config)
-        
-        if markov_result is not None and sim_result is not None:
-            markov_results.append(markov_result)
-            sim_results.append(sim_result)
-            
-            # Store detailed results
-            detailed_results.append({
-                'case_id': test_case['case_id'],
-                'arrival_rate': test_case['arrival_rate'],
-                'service_rate': test_case['service_rate'],
-                'num_servers': test_case['num_servers'],
-                'warm_percent': test_case['warm_percent'],
-                'spawn_time': test_case['spawn_time'],
-                'n_warm': markov_config['queue_warm'],
-                'n_cold': markov_config['queue_cold'],
-                'markov_blocking': markov_result['blocking_probability'],
-                'sim_blocking': sim_result['blocking_probability'],
-                'markov_latency': markov_result['latency'],
-                'sim_latency': sim_result['latency'],
-                'markov_variance_latency': markov_result['variance_latency'],
-                'sim_variance_latency': sim_result['variance_latency'],
-                'markov_p99_latency': markov_result['p99_latency'],
-                'sim_p99_latency': sim_result['p99_latency'],
-                'markov_cpu': markov_result['cpu_usage'],
-                'sim_cpu': sim_result['cpu_usage'],
-                'markov_ram': markov_result['ram_usage'],
-                'sim_ram': sim_result['ram_usage'],
-                'markov_power': markov_result['power_usage'],
-                'sim_power': sim_result['power_usage'],
-            })
-            
-            print(f"  Markov: block={markov_result['blocking_probability']:.4f}, "
-                  f"latency={markov_result['latency']:.4f}, "
-                  f"var={markov_result['variance_latency']:.4f}, "
-                  f"p99={markov_result['p99_latency']:.4f}, "
-                  f"cpu={markov_result['cpu_usage']:.2f}, ram={markov_result['ram_usage']:.2f}, "
-                  f"power={markov_result['power_usage']:.2f}")
-            print(f"  Sim:    block={sim_result['blocking_probability']:.4f}, "
-                  f"latency={sim_result['latency']:.4f}, "
-                  f"var={sim_result['variance_latency']:.4f}, "
-                  f"p99={sim_result['p99_latency']:.4f}, "
-                  f"cpu={sim_result['cpu_usage']:.2f}, ram={sim_result['ram_usage']:.2f}, "
-                  f"power={sim_result['power_usage']:.2f}")
-        else:
-            print("  ERROR: One or both models failed!")
+
+        # Run simulator NUM_SIM_REPLICATIONS times
+        print(f"  Running simulator ({NUM_SIM_REPLICATIONS} replications)...")
+        sim_replication_results = []
+        for _ in range(NUM_SIM_REPLICATIONS):
+            res = run_simulator(sim_config)
+            if res is not None:
+                sim_replication_results.append(res)
+
+        if markov_result is None or len(sim_replication_results) < 2:
+            print("  ERROR: Markov failed or insufficient sim replications!")
+            continue
+
+        # Compute mean and 95% CI for each metric from sim replications
+        n_reps = len(sim_replication_results)
+        t_crit = stats.t.ppf((1 + CI_LEVEL) / 2, df=n_reps - 1)
+
+        sim_mean = {}
+        ci_lower = {}
+        ci_upper = {}
+        ci_coverage = {}  # whether Markov falls inside CI
+
+        for metric in metrics_list:
+            vals = np.array([r[metric] for r in sim_replication_results])
+            mean_val = np.mean(vals)
+            std_val = np.std(vals, ddof=1)
+            margin = t_crit * std_val / np.sqrt(n_reps)
+
+            sim_mean[metric] = mean_val
+            ci_lower[metric] = mean_val - margin
+            ci_upper[metric] = mean_val + margin
+            ci_coverage[metric] = (ci_lower[metric] <= markov_result[metric] <= ci_upper[metric])
+
+        markov_results.append(markov_result)
+        sim_results.append(sim_mean)
+
+        # Store detailed results
+        row = {
+            'case_id': test_case['case_id'],
+            'arrival_rate': test_case['arrival_rate'],
+            'service_rate': test_case['service_rate'],
+            'num_servers': test_case['num_servers'],
+            'warm_percent': test_case['warm_percent'],
+            'spawn_time': test_case['spawn_time'],
+            'n_warm': markov_config['queue_warm'],
+            'n_cold': markov_config['queue_cold'],
+            'n_reps': n_reps,
+        }
+        for metric in metrics_list:
+            short = metric
+            row[f'markov_{short}'] = markov_result[metric]
+            row[f'sim_mean_{short}'] = sim_mean[metric]
+            row[f'ci_lower_{short}'] = ci_lower[metric]
+            row[f'ci_upper_{short}'] = ci_upper[metric]
+            row[f'ci_cover_{short}'] = ci_coverage[metric]
+        detailed_results.append(row)
+
+        # Print per-case summary
+        print(f"  Markov: block={markov_result['blocking_probability']:.4f}, "
+              f"latency={markov_result['latency']:.4f}, "
+              f"var={markov_result['variance_latency']:.4f}, "
+              f"p99={markov_result['p99_latency']:.4f}, "
+              f"cpu={markov_result['cpu_usage']:.2f}, ram={markov_result['ram_usage']:.2f}, "
+              f"power={markov_result['power_usage']:.2f}")
+        print(f"  Sim μ:  block={sim_mean['blocking_probability']:.4f}, "
+              f"latency={sim_mean['latency']:.4f}, "
+              f"var={sim_mean['variance_latency']:.4f}, "
+              f"p99={sim_mean['p99_latency']:.4f}, "
+              f"cpu={sim_mean['cpu_usage']:.2f}, ram={sim_mean['ram_usage']:.2f}, "
+              f"power={sim_mean['power_usage']:.2f}")
+        cover_str = ", ".join(
+            f"{m.split('_')[0][:3]}={'Y' if ci_coverage[m] else 'N'}"
+            for m in metrics_list
+        )
+        print(f"  CI coverage: {cover_str}")
     
-    # Calculate comparison metrics
+    # Calculate comparison metrics (using sim means as the single sim value)
     print(f"\n\nCalculating comparison metrics for {len(markov_results)} successful test cases...")
     comparison_metrics = calculate_comparison_metrics(markov_results, sim_results)
-    
+
     # Print results
     print("\n" + "=" * 60)
     print("COMPARISON RESULTS")
     print("=" * 60)
-    
-    for metric in ['blocking_probability', 'latency', 'variance_latency', 'p99_latency', 'cpu_usage', 'ram_usage', 'power_usage']:
+
+    for metric in metrics_list:
         m = comparison_metrics[metric]
         print(f"\n  {metric.upper().replace('_', ' ')}:")
         print(f"    MAPE:       {m['MAPE']:.2f}%")
@@ -514,24 +551,116 @@ def main():
         print(f"    Mean Error: {m['mean_error']:+.6f}  "
               f"(CTMC avg={m['mean_markov']:.6f}, Sim avg={m['mean_sim']:.6f})")
 
-    # -------------------------------------------------------------------------
-    # Bias & Error Distribution Analysis (CTMC)
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # 95% CI Coverage Analysis
+    # =========================================================================
     if len(detailed_results) > 0:
         df = pd.DataFrame(detailed_results)
+        n_scenarios = len(df)
 
         print(f"\n{'=' * 70}")
-        print(f"  BIAS & ERROR DISTRIBUTION ANALYSIS (CTMC vs Simulator)")
+        print(f"  95% CONFIDENCE INTERVAL COVERAGE ANALYSIS")
+        print(f"  (Markov prediction inside simulator {CI_LEVEL*100:.0f}% CI?)")
+        print(f"  Scenarios: {n_scenarios},  Replications per scenario: {NUM_SIM_REPLICATIONS}")
         print(f"{'=' * 70}")
 
-        # Per-metric signed error analysis
+        for metric in metrics_list:
+            cover_col = f'ci_cover_{metric}'
+            if cover_col not in df.columns:
+                continue
+            n_covered = df[cover_col].sum()
+            pct = 100 * n_covered / n_scenarios
+            print(f"\n  {metric.upper().replace('_', ' ')}:")
+            print(f"    Covered: {n_covered}/{n_scenarios} ({pct:.1f}%)")
+
+        # --- Conditional CI coverage by n_warm ---
+        print(f"\n  {'─' * 60}")
+        print(f"  CI Coverage by n_warm (warm pool size)")
+        print(f"  {'─' * 60}")
+
+        bins = [0, 2, 4, 8, 16, 100]
+        bin_labels = ['1-2', '3-4', '5-8', '9-16', '17+']
+        df['n_warm_bin'] = pd.cut(df['n_warm'], bins=bins, labels=bin_labels, right=True)
+
+        for metric in metrics_list:
+            cover_col = f'ci_cover_{metric}'
+            if cover_col not in df.columns:
+                continue
+            print(f"\n    {metric}:")
+            for bl in bin_labels:
+                subset = df[df['n_warm_bin'] == bl]
+                if len(subset) == 0:
+                    continue
+                nc = subset[cover_col].sum()
+                print(f"      n_warm={bl:>5s}  (n={len(subset):3d}):  "
+                      f"covered={nc}/{len(subset)} ({100*nc/len(subset):.1f}%)")
+
+        # --- Conditional CI coverage by spawn_time ---
+        print(f"\n  {'─' * 60}")
+        print(f"  CI Coverage by spawn_time")
+        print(f"  {'─' * 60}")
+
+        for metric in metrics_list:
+            cover_col = f'ci_cover_{metric}'
+            if cover_col not in df.columns:
+                continue
+            print(f"\n    {metric}:")
+            for st in sorted(df['spawn_time'].unique()):
+                subset = df[df['spawn_time'] == st]
+                if len(subset) == 0:
+                    continue
+                nc = subset[cover_col].sum()
+                print(f"      spawn_t={st:>3}  (n={len(subset):3d}):  "
+                      f"covered={nc}/{len(subset)} ({100*nc/len(subset):.1f}%)")
+
+        # --- Conditional CI coverage by load regime ---
+        print(f"\n  {'─' * 60}")
+        print(f"  CI Coverage by load regime (λ / effective capacity)")
+        print(f"  {'─' * 60}")
+
+        def _compute_rho(row):
+            cps = math.floor(100 / max(cpu_demand, ram_demand))
+            nw = int(cps * row['num_servers'] * row['warm_percent'])
+            nc = cps * row['num_servers'] - nw
+            warm_cap = nw * row['service_rate']
+            cold_eff = 1.0 / (row['spawn_time'] + 1.0 / row['service_rate'])
+            total_cap = warm_cap + nc * cold_eff
+            return row['arrival_rate'] / total_cap if total_cap > 0 else float('inf')
+
+        df['rho'] = df.apply(_compute_rho, axis=1)
+
+        rho_bins = [0, 0.7, 1.0, 1.3, 100]
+        rho_labels = ['light(<0.7)', 'moderate(0.7-1.0)', 'heavy(1.0-1.3)', 'overload(>1.3)']
+        df['load_regime'] = pd.cut(df['rho'], bins=rho_bins, labels=rho_labels, right=True)
+
+        for metric in metrics_list:
+            cover_col = f'ci_cover_{metric}'
+            if cover_col not in df.columns:
+                continue
+            print(f"\n    {metric}:")
+            for regime in rho_labels:
+                subset = df[df['load_regime'] == regime]
+                if len(subset) == 0:
+                    continue
+                nc = subset[cover_col].sum()
+                print(f"      {regime:>20s}  (n={len(subset):3d}):  "
+                      f"covered={nc}/{len(subset)} ({100*nc/len(subset):.1f}%)")
+
+    # -------------------------------------------------------------------------
+    # Bias & Error Distribution Analysis (CTMC vs Sim mean)
+    # -------------------------------------------------------------------------
+    if len(detailed_results) > 0:
+        print(f"\n{'=' * 70}")
+        print(f"  BIAS & ERROR DISTRIBUTION ANALYSIS (CTMC vs Simulator mean)")
+        print(f"{'=' * 70}")
+
         for metric_short, metric_label in [
-            ('blocking', 'Blocking Prob.'), ('latency', 'Latency'),
+            ('blocking_probability', 'Blocking Prob.'), ('latency', 'Latency'),
             ('variance_latency', 'Variance of Latency'), ('p99_latency', 'P99 Latency'),
-            ('cpu', 'CPU Usage'), ('ram', 'RAM Usage'), ('power', 'Power Usage'),
+            ('cpu_usage', 'CPU Usage'), ('ram_usage', 'RAM Usage'), ('power_usage', 'Power Usage'),
         ]:
             model_col = f'markov_{metric_short}'
-            sim_col = f'sim_{metric_short}'
+            sim_col = f'sim_mean_{metric_short}'
             if model_col not in df.columns or sim_col not in df.columns:
                 continue
 
@@ -554,173 +683,24 @@ def main():
             print(f"    Underestimates: {n_under}/{len(errors)} ({100*n_under/len(errors):.1f}%)")
             print(f"    Near-exact:     {n_match}/{len(errors)} ({100*n_match/len(errors):.1f}%)")
 
-        # --- Conditional analysis by n_warm ---
-        print(f"\n  {'─' * 60}")
-        print(f"  Conditional MAPE by n_warm (warm pool size)")
-        print(f"  {'─' * 60}")
-
-        bins = [0, 2, 4, 8, 16, 100]
-        labels = ['1-2', '3-4', '5-8', '9-16', '17+']
-        df['n_warm_bin'] = pd.cut(df['n_warm'], bins=bins, labels=labels, right=True)
-
-        for metric_short, metric_label in [
-            ('blocking', 'Blocking'), ('latency', 'Latency'),
-            ('variance_latency', 'Variance of Latency'), ('p99_latency', 'P99 Latency'),
-            ('cpu', 'CPU'), ('ram', 'RAM'), ('power', 'Power'),
-        ]:
-            model_col = f'markov_{metric_short}'
-            sim_col = f'sim_{metric_short}'
-            if model_col not in df.columns or sim_col not in df.columns:
-                continue
-
-            print(f"\n    {metric_label}:")
-            for bin_label in labels:
-                subset = df[df['n_warm_bin'] == bin_label]
-                if len(subset) == 0:
-                    continue
-                errs = subset[model_col] - subset[sim_col]
-                sim_vals = subset[sim_col]
-                if sim_vals.mean() > 0.01:
-                    mape = (errs.abs() / sim_vals.replace(0, np.nan)).mean() * 100
-                else:
-                    mape = errs.abs().mean() * 100
-                bias = errs.mean()
-                print(f"      n_warm={bin_label:>5s}  (n={len(subset):3d}):  "
-                      f"MAPE={mape:6.2f}%,  bias={bias:+.6f}")
-
-        # --- Conditional analysis by spawn_time ---
-        print(f"\n  {'─' * 60}")
-        print(f"  Conditional MAPE by spawn_time")
-        print(f"  {'─' * 60}")
-
-        for metric_short, metric_label in [
-            ('blocking', 'Blocking'), ('latency', 'Latency'),
-            ('variance_latency', 'Variance of Latency'), ('p99_latency', 'P99 Latency'),
-        ]:
-            model_col = f'markov_{metric_short}'
-            sim_col = f'sim_{metric_short}'
-            if model_col not in df.columns or sim_col not in df.columns:
-                continue
-
-            print(f"\n    {metric_label}:")
-            for st in sorted(df['spawn_time'].unique()):
-                subset = df[df['spawn_time'] == st]
-                if len(subset) == 0:
-                    continue
-                errs = subset[model_col] - subset[sim_col]
-                sim_vals = subset[sim_col]
-                if sim_vals.mean() > 0.01:
-                    mape = (errs.abs() / sim_vals.replace(0, np.nan)).mean() * 100
-                else:
-                    mape = errs.abs().mean() * 100
-                bias = errs.mean()
-                print(f"      spawn_t={st:>3}  (n={len(subset):3d}):  "
-                      f"MAPE={mape:6.2f}%,  bias={bias:+.6f}")
-
-        # --- Conditional analysis by load regime ---
-        print(f"\n  {'─' * 60}")
-        print(f"  Conditional MAPE by load regime (λ / effective capacity)")
-        print(f"  {'─' * 60}")
-
-        def _compute_rho(row):
-            cps = math.floor(100 / max(cpu_demand, ram_demand))
-            nw = int(cps * row['num_servers'] * row['warm_percent'])
-            nc = cps * row['num_servers'] - nw
-            warm_cap = nw * row['service_rate']
-            cold_eff = 1.0 / (row['spawn_time'] + 1.0 / row['service_rate'])
-            total_cap = warm_cap + nc * cold_eff
-            return row['arrival_rate'] / total_cap if total_cap > 0 else float('inf')
-
-        df['rho'] = df.apply(_compute_rho, axis=1)
-
-        rho_bins = [0, 0.7, 1.0, 1.3, 100]
-        rho_labels = ['light(<0.7)', 'moderate(0.7-1.0)', 'heavy(1.0-1.3)', 'overload(>1.3)']
-        df['load_regime'] = pd.cut(df['rho'], bins=rho_bins, labels=rho_labels, right=True)
-
-        for metric_short, metric_label in [
-            ('blocking', 'Blocking'), ('latency', 'Latency'),
-            ('variance_latency', 'Variance of Latency'), ('p99_latency', 'P99 Latency'),
-        ]:
-            model_col = f'markov_{metric_short}'
-            sim_col = f'sim_{metric_short}'
-            if model_col not in df.columns or sim_col not in df.columns:
-                continue
-
-            print(f"\n    {metric_label}:")
-            for regime in rho_labels:
-                subset = df[df['load_regime'] == regime]
-                if len(subset) == 0:
-                    continue
-                errs = subset[model_col] - subset[sim_col]
-                sim_vals = subset[sim_col]
-                if sim_vals.mean() > 0.01:
-                    mape = (errs.abs() / sim_vals.replace(0, np.nan)).mean() * 100
-                else:
-                    mape = errs.abs().mean() * 100
-                bias = errs.mean()
-                print(f"      {regime:>20s}  (n={len(subset):3d}):  "
-                      f"MAPE={mape:6.2f}%,  bias={bias:+.6f}")
-
     # Save detailed results to CSV
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"comparison_results/markov_vs_sim_{timestamp}.csv"
-    
-    # Create directory if it doesn't exist
+
     os.makedirs("comparison_results", exist_ok=True)
-    
-    # Create a combined dataset with model identifier
-    combined_results = []
-    
-    # Add Markov results
-    for i, (test_case, markov_result) in enumerate(zip(test_cases[:len(markov_results)], markov_results)):
-        combined_results.append({
-            'case_id': test_case['case_id'],
-            'model_type': 'Markov',
-            'arrival_rate': test_case['arrival_rate'],
-            'service_rate': test_case['service_rate'],
-            'num_servers': test_case['num_servers'],
-            'warm_percent': test_case['warm_percent'],
-            'spawn_time': test_case['spawn_time'],
-            'blocking_probability': markov_result['blocking_probability'],
-            'latency': markov_result['latency'],
-            'variance_latency': markov_result['variance_latency'],
-            'p99_latency': markov_result['p99_latency'],
-            'cpu_usage': markov_result['cpu_usage'],
-            'ram_usage': markov_result['ram_usage']
-        })
-    
-    # Add Simulator results
-    for i, (test_case, sim_result) in enumerate(zip(test_cases[:len(sim_results)], sim_results)):
-        combined_results.append({
-            'case_id': test_case['case_id'],
-            'model_type': 'Simulator',
-            'arrival_rate': test_case['arrival_rate'],
-            'service_rate': test_case['service_rate'],
-            'num_servers': test_case['num_servers'],
-            'warm_percent': test_case['warm_percent'],
-            'spawn_time': test_case['spawn_time'],
-            'blocking_probability': sim_result['blocking_probability'],
-            'latency': sim_result['latency'],
-            'variance_latency': sim_result['variance_latency'],
-            'p99_latency': sim_result['p99_latency'],
-            'cpu_usage': sim_result['cpu_usage'],
-            'ram_usage': sim_result['ram_usage']
-        })
-    
-    # Save combined results
-    df_combined = pd.DataFrame(combined_results)
-    df_combined.to_csv(filename, index=False)
-    print(f"\nCombined results saved to: {filename}")
-    
-    df = pd.DataFrame(detailed_results)
-    # df.to_csv(filename, index=False)
-    # print(f"\nDetailed results saved to: {filename}")
-    
+
+    if len(detailed_results) > 0:
+        df_out = pd.DataFrame(detailed_results)
+        df_out.to_csv(filename, index=False)
+        print(f"\nDetailed results saved to: {filename}")
+
     # Print summary statistics
     print(f"\nSUMMARY:")
     print(f"Total test cases: {len(test_cases)}")
     print(f"Successful comparisons: {len(markov_results)}")
     print(f"Success rate: {len(markov_results)/len(test_cases)*100:.1f}%")
+    print(f"Simulation replications per scenario: {NUM_SIM_REPLICATIONS}")
+    print(f"Confidence level: {CI_LEVEL*100:.0f}%")
 
 if __name__ == "__main__":
     main()
