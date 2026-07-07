@@ -1,0 +1,378 @@
+Arrival rates : [0.25, 0.5, 1.0]
+Time window   : 25th – 75th percentile of requests
+
+── Arrival rate: 0.25 req/s ──
+  Request dir : c:\Users\kienkauko\OneDrive - Hanoi University of Science and Technology\Simulators-n-tools\serverless-simulator\validation\2D\comparison_testbed\data\request\arrival_0.25
+  Resource dir: c:\Users\kienkauko\OneDrive - Hanoi University of Science and Technology\Simulators-n-tools\serverless-simulator\validation\2D\comparison_testbed\data\resource\arrival_0.25
+
+══ Pod: 10, Arrival: 0.25, Warm: 0% (20 reps) ══
+  Blocking rate     :  mean=0.39%  std=0.98%
+  Response time  (s):  mean=13.70  std=2.67
+  Processing time(s):  mean=2.5753  p99=6.5172  var=0.8244
+  Serving requests  :  mean=3.69  std=0.88
+  CPU/req        (%):  mean=6.1591  std=0.1161
+  RAM/req        (%):  mean=1.9470  std=0.0880
+  RAM/req       (MB):  mean=623.7226  std=28.2571
+  Mean CPU usage (%):  mean=22.6599  std=5.0352
+  Mean RAM usage (%):  mean=7.1988  std=1.8080
+
+══ Pod: 10, Arrival: 0.25, Warm: 10% (20 reps) ══
+  Blocking rate     :  mean=0.00%  std=0.00%
+  Response time  (s):  mean=5.70  std=5.22
+  Processing time(s):  mean=2.0296  p99=4.1348  var=0.3024
+  Serving requests  :  mean=1.47  std=0.64
+  CPU/req        (%):  mean=6.0355  std=0.1132
+  RAM/req        (%):  mean=3.3911  std=0.6747
+  RAM/req       (MB):  mean=1086.1773  std=216.0475
+  Mean CPU usage (%):  mean=8.8558  std=3.7895
+  Mean RAM usage (%):  mean=4.5907  std=1.0855
+
+══ Pod: 10, Arrival: 0.25, Warm: 20% (20 reps) ══
+  Blocking rate     :  mean=0.00%  std=0.00%
+  Response time  (s):  mean=2.28  std=2.34
+  Processing time(s):  mean=1.7647  p99=2.5769  var=0.0642
+  Serving requests  :  mean=0.60  std=0.24
+  CPU/req        (%):  mean=5.5141  std=0.2087
+  RAM/req        (%):  mean=9.9711  std=2.9163
+  RAM/req       (MB):  mean=3193.6131  std=934.1289
+  Mean CPU usage (%):  mean=3.3358  std=1.3970
+  Mean RAM usage (%):  mean=5.3309  std=0.4200
+
+══ Pod: 10, Arrival: 0.25, Warm: 30% (20 reps) ══
+  Blocking rate     :  mean=0.00%  std=0.00%
+  Response time  (s):  mean=1.95  std=1.24
+  Processing time(s):  mean=1.8044  p99=2.4400  var=0.0478
+  Serving requests  :  mean=0.53  std=0.14
+  CPU/req        (%):  mean=5.4649  std=0.1429
+  RAM/req        (%):  mean=15.4578  std=4.0855
+  RAM/req       (MB):  mean=4953.0211  std=1308.0296
+  Mean CPU usage (%):  mean=2.9058  std=0.7830
+  Mean RAM usage (%):  mean=7.6981  std=0.2004
+
+══ Pod: 10, Arrival: 0.25, Warm: 40% (20 reps) ══
+  Blocking rate     :  mean=0.00%  std=0.00%
+  Response time  (s):  mean=1.75  std=0.26
+  Processing time(s):  mean=1.7405  p99=2.5076  var=0.0650
+  Serving requests  :  mean=0.45  std=0.10
+  CPU/req        (%):  mean=5.3946  std=0.0890
+  RAM/req        (%):  mean=24.0752  std=6.4392
+  RAM/req       (MB):  mean=7713.0739  std=2064.7377
+  Mean CPU usage (%):  mean=2.4353  std=0.5502
+  Mean RAM usage (%):  mean=10.2569  std=0.0547
+
+══ Pod: 10, Arrival: 0.25, Warm: 50% (20 reps) ══
+  Blocking rate     :  mean=0.00%  std=0.00%
+  Response time  (s):  mean=1.75  std=0.23
+  Processing time(s):  mean=1.7398  p99=2.3900  var=0.0539
+  Serving requests  :  mean=0.44  std=0.08
+  CPU/req        (%):  mean=5.4554  std=0.1162
+  RAM/req        (%):  mean=29.9645  std=5.3949
+  RAM/req       (MB):  mean=9598.6820  std=1726.6509
+  Mean CPU usage (%):  mean=2.3872  std=0.4189
+  Mean RAM usage (%):  mean=12.7061  std=0.0675
+
+══ Pod: 10, Arrival: 0.25, Warm: 60% (20 reps) ══
+  Blocking rate     :  mean=0.00%  std=0.00%
+  Response time  (s):  mean=1.74  std=0.21
+  Processing time(s):  mean=1.7327  p99=2.3700  var=0.0436
+  Serving requests  :  mean=0.47  std=0.07
+  CPU/req        (%):  mean=5.5202  std=0.1286
+  RAM/req        (%):  mean=33.3140  std=5.1700
+  RAM/req       (MB):  mean=10672.6348  std=1656.1823
+  Mean CPU usage (%):  mean=2.5703  std=0.3812
+  Mean RAM usage (%):  mean=15.1615  std=0.0698
+
+══ Pod: 10, Arrival: 0.25, Warm: 70% (20 reps) ══
+  Blocking rate     :  mean=0.00%  std=0.00%
+  Response time  (s):  mean=1.74  std=0.22
+  Processing time(s):  mean=1.7350  p99=2.4000  var=0.0490
+  Serving requests  :  mean=0.46  std=0.08
+  CPU/req        (%):  mean=5.5132  std=0.1254
+  RAM/req        (%):  mean=39.6058  std=6.1316
+  RAM/req       (MB):  mean=12687.8608  std=1965.5490
+  Mean CPU usage (%):  mean=2.5079  std=0.4120
+  Mean RAM usage (%):  mean=17.5680  std=0.0233
+
+══ Pod: 10, Arrival: 0.25, Warm: 80% (20 reps) ══
+  Blocking rate     :  mean=0.00%  std=0.00%
+  Response time  (s):  mean=1.75  std=0.23
+  Processing time(s):  mean=1.7432  p99=2.3784  var=0.0507
+  Serving requests  :  mean=0.43  std=0.08
+  CPU/req        (%):  mean=5.6407  std=0.1542
+  RAM/req        (%):  mean=48.1277  std=10.3671
+  RAM/req       (MB):  mean=15417.7474  std=3322.4481
+  Mean CPU usage (%):  mean=2.4493  std=0.4507
+  Mean RAM usage (%):  mean=20.1042  std=0.0718
+
+══ Pod: 10, Arrival: 0.25, Warm: 90% (20 reps) ══
+  Blocking rate     :  mean=0.00%  std=0.00%
+  Response time  (s):  mean=1.73  std=0.23
+  Processing time(s):  mean=1.7266  p99=2.3937  var=0.0532
+  Serving requests  :  mean=0.46  std=0.08
+  CPU/req        (%):  mean=5.6273  std=0.1513
+  RAM/req        (%):  mean=51.4764  std=8.5431
+  RAM/req       (MB):  mean=16491.6046  std=2737.5328
+  Mean CPU usage (%):  mean=2.5620  std=0.4479
+  Mean RAM usage (%):  mean=22.7857  std=0.1080
+
+══ Pod: 10, Arrival: 0.25, Warm: 100% (20 reps) ══
+  Blocking rate     :  mean=0.00%  std=0.00%
+  Response time  (s):  mean=1.78  std=0.22
+  Processing time(s):  mean=1.7754  p99=2.4800  var=0.0502
+  Serving requests  :  mean=0.48  std=0.10
+  CPU/req        (%):  mean=5.6815  std=0.1260
+  RAM/req        (%):  mean=56.0166  std=15.7667
+  RAM/req       (MB):  mean=17945.4703  std=5051.8211
+  Mean CPU usage (%):  mean=2.7169  std=0.5462
+  Mean RAM usage (%):  mean=25.3393  std=0.1139
+
+── Arrival rate: 0.5 req/s ──
+  Request dir : c:\Users\kienkauko\OneDrive - Hanoi University of Science and Technology\Simulators-n-tools\serverless-simulator\validation\2D\comparison_testbed\data\request\arrival_0.5
+  Resource dir: c:\Users\kienkauko\OneDrive - Hanoi University of Science and Technology\Simulators-n-tools\serverless-simulator\validation\2D\comparison_testbed\data\resource\arrival_0.5
+
+══ Pod: 10, Arrival: 0.5, Warm: 0% (20 reps) ══
+  Blocking rate     :  mean=15.49%  std=8.49%
+  Response time  (s):  mean=17.61  std=7.22
+  Processing time(s):  mean=3.5098  p99=14.6572  var=5.3560
+  Serving requests  :  mean=7.13  std=0.69
+  CPU/req        (%):  mean=5.6041  std=0.8301
+  RAM/req        (%):  mean=1.8782  std=0.2176
+  RAM/req       (MB):  mean=601.6949  std=69.7236
+  Mean CPU usage (%):  mean=39.5441  std=4.8739
+  Mean RAM usage (%):  mean=13.2944  std=1.3306
+
+══ Pod: 10, Arrival: 0.5, Warm: 10% (20 reps) ══
+  Blocking rate     :  mean=2.93%  std=2.82%
+  Response time  (s):  mean=9.34  std=7.17
+  Processing time(s):  mean=2.8168  p99=11.0500  var=3.2091
+  Serving requests  :  mean=4.66  std=1.02
+  CPU/req        (%):  mean=5.9636  std=0.0972
+  RAM/req        (%):  mean=2.3447  std=0.1101
+  RAM/req       (MB):  mean=751.1665  std=35.2990
+  Mean CPU usage (%):  mean=27.7438  std=5.9410
+  Mean RAM usage (%):  mean=10.8161  std=1.9428
+
+══ Pod: 10, Arrival: 0.5, Warm: 20% (20 reps) ══
+  Blocking rate     :  mean=0.00%  std=0.00%
+  Response time  (s):  mean=4.41  std=5.18
+  Processing time(s):  mean=2.0053  p99=3.8211  var=0.2276
+  Serving requests  :  mean=2.20  std=0.72
+  CPU/req        (%):  mean=5.8126  std=0.5781
+  RAM/req        (%):  mean=3.8275  std=0.7609
+  RAM/req       (MB):  mean=1226.0307  std=243.6829
+  Mean CPU usage (%):  mean=12.6195  std=3.8887
+  Mean RAM usage (%):  mean=7.9300  std=1.1411
+
+══ Pod: 10, Arrival: 0.5, Warm: 30% (15 reps) ══
+  Blocking rate     :  mean=0.00%  std=0.00%
+  Response time  (s):  mean=2.63  std=2.71
+  Processing time(s):  mean=1.9165  p99=2.7324  var=0.1052
+  Serving requests  :  mean=1.43  std=0.55
+  CPU/req        (%):  mean=5.7384  std=0.1374
+  RAM/req        (%):  mean=6.4983  std=1.5759
+  RAM/req       (MB):  mean=2081.5217  std=504.6858
+  Mean CPU usage (%):  mean=8.2275  std=3.2667
+  Mean RAM usage (%):  mean=8.5048  std=0.8178
+
+══ Pod: 10, Arrival: 0.5, Warm: 40% (20 reps) ══
+  Blocking rate     :  mean=0.19%  std=0.63%
+  Response time  (s):  mean=2.21  std=1.89
+  Processing time(s):  mean=1.9515  p99=4.4318  var=0.3185
+  Serving requests  :  mean=1.04  std=0.26
+  CPU/req        (%):  mean=5.4620  std=0.1291
+  RAM/req        (%):  mean=9.6857  std=1.7441
+  RAM/req       (MB):  mean=3102.4273  std=558.5926
+  Mean CPU usage (%):  mean=5.6790  std=1.5465
+  Mean RAM usage (%):  mean=9.6240  std=0.4256
+
+══ Pod: 10, Arrival: 0.5, Warm: 50% (20 reps) ══
+  Blocking rate     :  mean=0.00%  std=0.00%
+  Response time  (s):  mean=1.90  std=0.92
+  Processing time(s):  mean=1.8210  p99=2.5856  var=0.0585
+  Serving requests  :  mean=1.02  std=0.16
+  CPU/req        (%):  mean=6.5804  std=0.2524
+  RAM/req        (%):  mean=14.8089  std=2.5257
+  RAM/req       (MB):  mean=4743.9409  std=809.3146
+  Mean CPU usage (%):  mean=6.6708  std=0.9024
+  Mean RAM usage (%):  mean=14.6858  std=0.2541
+
+══ Pod: 10, Arrival: 0.5, Warm: 60% (20 reps) ══
+  Blocking rate     :  mean=0.00%  std=0.00%
+  Response time  (s):  mean=1.90  std=0.33
+  Processing time(s):  mean=1.8996  p99=3.0100  var=0.1106
+  Serving requests  :  mean=0.92  std=0.16
+  CPU/req        (%):  mean=5.5084  std=0.1274
+  RAM/req        (%):  mean=16.5203  std=3.0423
+  RAM/req       (MB):  mean=5292.6806  std=975.2292
+  Mean CPU usage (%):  mean=5.0450  std=0.8479
+  Mean RAM usage (%):  mean=14.6861  std=0.3620
+
+══ Pod: 10, Arrival: 0.5, Warm: 70% (20 reps) ══
+  Blocking rate     :  mean=0.00%  std=0.00%
+  Response time  (s):  mean=1.92  std=0.35
+  Processing time(s):  mean=1.9191  p99=3.1137  var=0.1197
+  Serving requests  :  mean=0.96  std=0.13
+  CPU/req        (%):  mean=5.5335  std=0.0939
+  RAM/req        (%):  mean=18.4209  std=2.4273
+  RAM/req       (MB):  mean=5901.1848  std=777.7426
+  Mean CPU usage (%):  mean=5.3104  std=0.6772
+  Mean RAM usage (%):  mean=17.3855  std=0.1155
+
+══ Pod: 10, Arrival: 0.5, Warm: 80% (20 reps) ══
+  Blocking rate     :  mean=0.00%  std=0.00%
+  Response time  (s):  mean=1.93  std=0.36
+  Processing time(s):  mean=1.9215  p99=3.2500  var=0.1317
+  Serving requests  :  mean=1.03  std=0.13
+  CPU/req        (%):  mean=5.5645  std=0.0874
+  RAM/req        (%):  mean=19.7908  std=2.7655
+  RAM/req       (MB):  mean=6339.9723  std=885.8837
+  Mean CPU usage (%):  mean=5.7140  std=0.7585
+  Mean RAM usage (%):  mean=19.9569  std=0.0527
+
+══ Pod: 10, Arrival: 0.5, Warm: 90% (20 reps) ══
+  Blocking rate     :  mean=0.00%  std=0.00%
+  Response time  (s):  mean=1.90  std=0.33
+  Processing time(s):  mean=1.8997  p99=2.9500  var=0.1067
+  Serving requests  :  mean=1.00  std=0.15
+  CPU/req        (%):  mean=5.5770  std=0.1022
+  RAM/req        (%):  mean=23.0670  std=3.9925
+  RAM/req       (MB):  mean=7389.7574  std=1279.1723
+  Mean CPU usage (%):  mean=5.5978  std=0.8138
+  Mean RAM usage (%):  mean=22.5851  std=0.0739
+
+══ Pod: 10, Arrival: 0.5, Warm: 100% (20 reps) ══
+  Blocking rate     :  mean=0.05%  std=0.22%
+  Response time  (s):  mean=1.79  std=0.24
+  Processing time(s):  mean=1.7885  p99=2.4874  var=0.0562
+  Serving requests  :  mean=0.93  std=0.18
+  CPU/req        (%):  mean=5.8018  std=0.2030
+  RAM/req        (%):  mean=29.9583  std=5.6207
+  RAM/req       (MB):  mean=9597.0965  std=1800.9326
+  Mean CPU usage (%):  mean=5.3695  std=0.9419
+  Mean RAM usage (%):  mean=26.8479  std=0.1478
+
+── Arrival rate: 1.0 req/s ──
+  Request dir : c:\Users\kienkauko\OneDrive - Hanoi University of Science and Technology\Simulators-n-tools\serverless-simulator\validation\2D\comparison_testbed\data\request\arrival_1.0
+  Resource dir: c:\Users\kienkauko\OneDrive - Hanoi University of Science and Technology\Simulators-n-tools\serverless-simulator\validation\2D\comparison_testbed\data\resource\arrival_1.0
+
+══ Pod: 10, Arrival: 1.0, Warm: 0% (20 reps) ══
+  Blocking rate     :  mean=53.48%  std=5.12%
+  Response time  (s):  mean=20.69  std=8.60
+  Processing time(s):  mean=4.4003  p99=16.8687  var=9.7646
+  Serving requests  :  mean=9.25  std=0.24
+  CPU/req        (%):  mean=5.4408  std=0.5785
+  RAM/req        (%):  mean=1.9445  std=0.1726
+  RAM/req       (MB):  mean=622.8379  std=55.3083
+  Mean CPU usage (%):  mean=50.3109  std=5.3274
+  Mean RAM usage (%):  mean=17.9800  std=1.5635
+
+══ Pod: 10, Arrival: 1.0, Warm: 10% (20 reps) ══
+  Blocking rate     :  mean=36.50%  std=6.05%
+  Response time  (s):  mean=13.86  std=9.54
+  Processing time(s):  mean=4.0775  p99=16.5372  var=8.4673
+  Serving requests  :  mean=8.58  std=0.39
+  CPU/req        (%):  mean=5.5840  std=0.5686
+  RAM/req        (%):  mean=2.1025  std=0.1767
+  RAM/req       (MB):  mean=673.4293  std=56.5846
+  Mean CPU usage (%):  mean=47.8484  std=4.7679
+  Mean RAM usage (%):  mean=18.0270  std=1.5595
+
+══ Pod: 10, Arrival: 1.0, Warm: 20% (20 reps) ══
+  Blocking rate     :  mean=17.84%  std=5.04%
+  Response time  (s):  mean=8.84  std=8.28
+  Processing time(s):  mean=3.2212  p99=12.5142  var=4.4158
+  Serving requests  :  mean=7.18  std=0.80
+  CPU/req        (%):  mean=5.6458  std=0.4612
+  RAM/req        (%):  mean=2.3518  std=0.1533
+  RAM/req       (MB):  mean=753.2998  std=49.0961
+  Mean CPU usage (%):  mean=40.3731  std=4.5003
+  Mean RAM usage (%):  mean=16.7965  std=1.3991
+
+══ Pod: 10, Arrival: 1.0, Warm: 30% (20 reps) ══
+  Blocking rate     :  mean=5.65%  std=3.72%
+  Response time  (s):  mean=5.48  std=6.10
+  Processing time(s):  mean=2.6244  p99=9.0810  var=2.1556
+  Serving requests  :  mean=5.30  std=1.23
+  CPU/req        (%):  mean=5.8319  std=0.0661
+  RAM/req        (%):  mean=2.8916  std=0.2496
+  RAM/req       (MB):  mean=926.2246  std=79.8987
+  Mean CPU usage (%):  mean=30.8532  std=6.9504
+  Mean RAM usage (%):  mean=15.0268  std=2.2419
+
+══ Pod: 10, Arrival: 1.0, Warm: 40% (20 reps) ══
+  Blocking rate     :  mean=0.69%  std=1.14%
+  Response time  (s):  mean=3.08  std=3.56
+  Processing time(s):  mean=2.1164  p99=5.3324  var=0.5401
+  Serving requests  :  mean=3.10  std=0.97
+  CPU/req        (%):  mean=5.8785  std=0.0604
+  RAM/req        (%):  mean=4.2171  std=0.7636
+  RAM/req       (MB):  mean=1350.6165  std=244.3425
+  Mean CPU usage (%):  mean=18.2304  std=5.6145
+  Mean RAM usage (%):  mean=12.4122  std=1.6350
+
+══ Pod: 10, Arrival: 1.0, Warm: 50% (20 reps) ══
+  Blocking rate     :  mean=0.05%  std=0.14%
+  Response time  (s):  mean=2.45  std=2.35
+  Processing time(s):  mean=1.9699  p99=3.2864  var=0.1294
+  Serving requests  :  mean=2.46  std=0.54
+  CPU/req        (%):  mean=5.8513  std=0.0592
+  RAM/req        (%):  mean=5.8790  std=0.9060
+  RAM/req       (MB):  mean=1882.9893  std=290.2124
+  Mean CPU usage (%):  mean=14.3727  std=3.1760
+  Mean RAM usage (%):  mean=13.9698  std=0.9273
+
+══ Pod: 10, Arrival: 1.0, Warm: 60% (20 reps) ══
+  Blocking rate     :  mean=0.03%  std=0.11%
+  Response time  (s):  mean=2.16  std=1.53
+  Processing time(s):  mean=1.9784  p99=3.5800  var=0.1820
+  Serving requests  :  mean=2.27  std=0.42
+  CPU/req        (%):  mean=5.7743  std=0.0462
+  RAM/req        (%):  mean=7.3857  std=1.0941
+  RAM/req       (MB):  mean=2365.6699  std=350.4226
+  Mean CPU usage (%):  mean=13.1076  std=2.4436
+  Mean RAM usage (%):  mean=16.3187  std=0.5301
+
+══ Pod: 10, Arrival: 1.0, Warm: 70% (20 reps) ══
+  Blocking rate     :  mean=0.00%  std=0.00%
+  Response time  (s):  mean=1.91  std=0.54
+  Processing time(s):  mean=1.8883  p99=2.6700  var=0.0718
+  Serving requests  :  mean=1.92  std=0.25
+  CPU/req        (%):  mean=5.5068  std=0.0552
+  RAM/req        (%):  mean=9.2223  std=1.1125
+  RAM/req       (MB):  mean=2954.0261  std=356.3760
+  Mean CPU usage (%):  mean=10.5862  std=1.4300
+  Mean RAM usage (%):  mean=17.4489  std=0.3559
+
+══ Pod: 10, Arrival: 1.0, Warm: 80% (20 reps) ══
+  Blocking rate     :  mean=0.02%  std=0.10%
+  Response time  (s):  mean=1.97  std=0.57
+  Processing time(s):  mean=1.9484  p99=2.9010  var=0.1009
+  Serving requests  :  mean=2.07  std=0.27
+  CPU/req        (%):  mean=5.4754  std=0.0614
+  RAM/req        (%):  mean=11.2532  std=1.5430
+  RAM/req       (MB):  mean=3604.5528  std=494.1783
+  Mean CPU usage (%):  mean=11.3291  std=1.4689
+  Mean RAM usage (%):  mean=22.8749  std=0.1916
+
+══ Pod: 10, Arrival: 1.0, Warm: 90% (20 reps) ══
+  Blocking rate     :  mean=0.00%  std=0.00%
+  Response time  (s):  mean=1.91  std=0.29
+  Processing time(s):  mean=1.9017  p99=2.7569  var=0.0845
+  Serving requests  :  mean=1.90  std=0.17
+  CPU/req        (%):  mean=5.5100  std=0.0633
+  RAM/req        (%):  mean=13.6026  std=1.2226
+  RAM/req       (MB):  mean=4357.2904  std=391.8648
+  Mean CPU usage (%):  mean=10.4709  std=0.9628
+  Mean RAM usage (%):  mean=25.6393  std=0.0924
+
+══ Pod: 10, Arrival: 1.0, Warm: 100% (20 reps) ══
+  Blocking rate     :  mean=0.00%  std=0.00%
+  Response time  (s):  mean=1.85  std=0.26
+  Processing time(s):  mean=1.8429  p99=2.6100  var=0.0663
+  Serving requests  :  mean=1.88  std=0.23
+  CPU/req        (%):  mean=5.4949  std=0.0763
+  RAM/req        (%):  mean=15.4409  std=1.8099
+  RAM/req       (MB):  mean=4946.1230  std=579.6825
+  Mean CPU usage (%):  mean=10.2984  std=1.2146
+  Mean RAM usage (%):  mean=28.5426  std=0.0503
+

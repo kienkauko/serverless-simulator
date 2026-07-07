@@ -27,8 +27,7 @@ FILE_RE = re.compile(
 
 def arrival_dir(arrival_rate):
     """Return (request_dir, resource_dir) for a given arrival rate."""
-    label = str(arrival_rate).rstrip("0").rstrip(".")
-    folder = f"arrival_{label}"
+    folder = f"arrival_{arrival_rate}"
     return (
         os.path.join(DATA_DIR, "request", folder),
         os.path.join(DATA_DIR, "resource", folder),
@@ -249,7 +248,7 @@ def analyze_arrival(arrival_rate, lower_cutoff=LOWER_CUTOFF, upper_cutoff=UPPER_
         else:
             output_lines.append(f"  Response time  (s):  no successful requests in window")
         if all_processing_times:
-            output_lines.append(f"  Processing time(s):  p99={np.percentile(all_processing_times, 99):.4f}  var={np.var(all_processing_times):.4f}")
+            output_lines.append(f"  Processing time(s):  mean={np.mean(all_processing_times):.4f}  p99={np.percentile(all_processing_times, 99):.4f}  var={np.var(all_processing_times):.4f}")
         else:
             output_lines.append(f"  Processing time(s):  no successful requests in window")
         output_lines.append(f"  Serving requests  :  mean={np.mean(avg_servings):.2f}  std={np.std(avg_servings):.2f}")
@@ -284,7 +283,7 @@ def analyze(arrival_rates=ARRIVAL_RATES, lower_cutoff=LOWER_CUTOFF, upper_cutoff
     os.makedirs(result_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y_%m_%d_%H%M%S")
     result_file = os.path.join(result_dir, f"multi_analysis_result_{timestamp}.txt")
-    with open(result_file, "w") as f:
+    with open(result_file, "w", encoding="utf-8") as f:
         f.write(output_str + "\n")
 
 

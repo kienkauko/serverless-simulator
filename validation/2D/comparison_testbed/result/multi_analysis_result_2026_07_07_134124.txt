@@ -1,0 +1,15 @@
+Arrival rates : [0.25, 0.5, 1.0]
+Time window   : 25th – 75th percentile of requests
+
+── Arrival rate: 0.25 req/s ──
+  Request dir : c:\Users\kienkauko\OneDrive - Hanoi University of Science and Technology\Simulators-n-tools\serverless-simulator\validation\2D\comparison_testbed\data\request\arrival_0.25
+  Resource dir: c:\Users\kienkauko\OneDrive - Hanoi University of Science and Technology\Simulators-n-tools\serverless-simulator\validation\2D\comparison_testbed\data\resource\arrival_0.25
+
+── Arrival rate: 0.5 req/s ──
+  Request dir : c:\Users\kienkauko\OneDrive - Hanoi University of Science and Technology\Simulators-n-tools\serverless-simulator\validation\2D\comparison_testbed\data\request\arrival_0.5
+  Resource dir: c:\Users\kienkauko\OneDrive - Hanoi University of Science and Technology\Simulators-n-tools\serverless-simulator\validation\2D\comparison_testbed\data\resource\arrival_0.5
+
+── Arrival rate: 1.0 req/s ──
+  Request dir : c:\Users\kienkauko\OneDrive - Hanoi University of Science and Technology\Simulators-n-tools\serverless-simulator\validation\2D\comparison_testbed\data\request\arrival_1
+  Resource dir: c:\Users\kienkauko\OneDrive - Hanoi University of Science and Technology\Simulators-n-tools\serverless-simulator\validation\2D\comparison_testbed\data\resource\arrival_1
+
