@@ -748,8 +748,8 @@ if __name__=="__main__":
         "lam": 50,
         "mu": 10,
         "spawn_rate": 1/6.05,
-        "queue_warm":5, # queue
-        "queue_cold": 5, # queue
+        "queue_warm":500, # queue
+        "queue_cold": 500, # queue
         "serving_time": "exponential",
         "spawn_distribution": "exponential",  # "exponential" or "deterministic"
         "arrivals": "exponential",

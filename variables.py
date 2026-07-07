@@ -12,14 +12,17 @@ config = {
     # System Parameters
     "system": {
         "num_servers": 2,
-        "sim_time": 5000,
+        "sim_time": 10000,
+        # Warm-up period (sim time units) excluded from the time-averaged
+        # resource/power metrics to remove empty-system initialization bias.
+        "warmup_time": 3000,
         "verbose": False,
         "warm_percent": 0.5,  # Percentage of warm containers
     },
     "distribution": {
         "spawn-distribution": "exponential",  # Options: "deterministic", "lognormal", "exponential"
         "arrival-distribution": "exponential",  # Options: "deterministic", "weibull", "exponential
-        "service-distribution": "traces",  # Options: "exponential", "traces"
+        "service-distribution": "exponential",  # Options: "exponential", "traces"
     },
     # Server Parameters
     "server": {

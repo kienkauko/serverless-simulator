@@ -70,8 +70,11 @@ class System:
         
         # Variables for tracking resource usage
         self.last_resource_update = 0.0
-        self.total_cpu_usage_area = 0.0  # Time-weighted CPU usage
-        self.total_ram_usage_area = 0.0  # Time-weighted RAM usage
+        # Warm-up period (in sim time units) excluded from the time-averaged
+        # resource/power metrics to avoid initialization (empty-system) bias.
+        self.warmup_time = config["system"].get("warmup_time", 0.0)
+        self.total_cpu_usage_area = 0.0  # Time-weighted CPU usage (post warm-up)
+        self.total_ram_usage_area = 0.0  # Time-weighted RAM usage (post warm-up)
         self.total_cpu_capacity = 0.0  # Total CPU capacity of all servers
         self.total_ram_capacity = 0.0  # Total RAM capacity of all servers
         
@@ -464,53 +467,68 @@ class System:
         self.waiting_requests_count -= 1
 
     def update_resource_stats(self):
-        """Update time-weighted statistics for resource usage."""
+        """Update time-weighted statistics for resource usage.
+
+        Only the portion of each interval that falls after ``warmup_time`` is
+        accumulated. Since usage is constant between resource-changing events
+        (this method is called before every such change), clipping the interval
+        to ``[warmup_time, now]`` yields the exact post-warm-up time-average.
+        """
         current_time = self.env.now
-        time_delta = current_time - self.last_resource_update
-        
+        # Clip the interval to the post-warm-up window
+        effective_start = max(self.last_resource_update, self.warmup_time)
+        self.last_resource_update = current_time
+        time_delta = current_time - effective_start
+        if time_delta <= 0:
+            return
+
         # Calculate current CPU and RAM usage across all servers
         current_cpu_usage = sum(server.cpu_capacity - server.cpu_real  for server in self.servers)
         current_ram_usage = sum(server.ram_capacity - server.ram_real  for server in self.servers)
-        
+
         # Update time-weighted usage areas
         self.total_cpu_usage_area += time_delta * current_cpu_usage
         self.total_ram_usage_area += time_delta * current_ram_usage
-        
+
         # Update power usage across all servers and total energy usage
         # Calculate current power
         current_power_usage = sum(server.current_power() for server in self.servers)
 
         self.total_energy_usage += current_power_usage * time_delta  # Energy = Power * Time
 
-        # Update last resource update time
-        self.last_resource_update = current_time
 
+    def _measured_duration(self):
+        """Length of the averaging window (simulation time minus warm-up)."""
+        return self.env.now - self.warmup_time
 
     def get_mean_cpu_usage(self):
-        """Calculate the mean CPU usage over time."""
+        """Calculate the mean CPU usage over the post-warm-up window."""
         # Update statistics first to include latest data
         self.update_resource_stats()
-        
-        if self.env.now > 0:
-            return self.total_cpu_usage_area / (self.env.now)
+
+        duration = self._measured_duration()
+        if duration > 0:
+            return self.total_cpu_usage_area / duration
         return 0.0
-        
+
     def get_mean_ram_usage(self):
-        """Calculate the mean RAM usage over time."""
+        """Calculate the mean RAM usage over the post-warm-up window."""
         # Update statistics first to include latest data
         self.update_resource_stats()
-        
-        if self.env.now > 0:
-            return self.total_ram_usage_area / (self.env.now)
+
+        duration = self._measured_duration()
+        if duration > 0:
+            return self.total_ram_usage_area / duration
         return 0.0
 
     def get_mean_power_usage(self):
-        """Calculate the mean CPU usage over time."""
+        """Calculate the mean power usage over the post-warm-up window."""
         # Update statistics first to include latest data
         self.update_resource_stats()
-        
-        if self.env.now > 0:
-            return self.total_energy_usage / (self.env.now)
+
+        duration = self._measured_duration()
+        if duration > 0:
+            return self.total_energy_usage / duration
         return 0.0
     
     def update_processing_stats(self):
