@@ -1,90 +1,40 @@
-import random
-import math
-# --- Configuration ---
-RANDOM_SEED = 42
-SIM_TIME = 9000  # Simulation time units (e.g., seconds)
+# --- Simulation Configuration ---
 
-# Topology configuration
-USE_TOPOLOGY = False  # New flag to enable/disable topology routing
-
-# Create a centralized config dictionary to hold all configuration parameters
 config = {
-    # System Parameters
     "system": {
-        "num_servers": 2,
-        "sim_time": 5000,
+        "num_servers": 15,
+        "sim_time": 10000,
+        "warmup_time": 1000,       # Transient warm-up period; metrics collected only after this
         "verbose": False,
-        "warm_percent": 0.5,  # Percentage of warm containers
+        "warm_percent": 0,       # Fraction of total container slots pre-warmed
     },
     "distribution": {
-        "spawn-distribution": "exponential",  # Options: "deterministic", "lognormal", "exponential"
-        "arrival-distribution": "exponential",  # Options: "deterministic", "weibull", "exponential
-        "service-distribution": "traces",  # Options: "exponential", "traces"
+        "spawn-distribution": "exponential",   # Options: "deterministic", "lognormal", "exponential"
+        "arrival-distribution": "exponential", # Options: "deterministic", "weibull", "exponential"
+        "service-distribution": "exponential",      # Options: "exponential", "deterministic", "traces"
+        "idle-distribution": "deterministic",  # Options: "deterministic", "markov" (exponential idle timer)
     },
-    # Server Parameters
     "server": {
-        "cpu_capacity": 100.0,  # %
-        "ram_capacity": 100.0,  # %
-        "peak_power": 150.0,  # Peak power in Watts
-        "power_scale": 0.2,  # Power scale factor
+        "cpu_capacity": 100.0,     # % of total CPU
+        "ram_capacity": 100.0,     # % of total RAM
+        "peak_power": 150.0,       # Peak power consumption in Watts
+        "power_scale": 0.4,        # Idle power fraction (0–1)
     },
-    
-    # Request Parameters
     "request": {
-        "arrival_rate_mean": 50,  # Average requests per time unit (lambda for M)
-        "arrival_rate_std": 0,   # Stddev for arrival rate 
-        "service_rate": 10,  # Average service completions per time unit (mu for M)
-        # CPU and RAM demands - fixed values instead of ranges
-        "warm_cpu": 0.48,
-        "warm_ram": 2.10,
-        "cold_start_cpu": 3.22,
-        "cold_start_ram": 2.10,
-        "cpu_demand": 17.80,
-        "ram_demand": 4.28,
+        "arrival_rate_mean": 2.35,   # Average requests per time unit (λ)
+        "arrival_rate_std": 0,     # Std-dev of arrival rate (used by Weibull)
+        "service_rate": 1/2.12,        # Average service completions per time unit (μ)
+        # Resource demands per request
+        "warm_cpu": 0.05,
+        "warm_ram": 2.60,
+        "cold_start_cpu": 5.35,
+        "cold_start_ram": 1.51,
+        "cpu_demand": 7.03,
+        "ram_demand": 2.62,
     },
-    
-    # Container Parameters
-    # NOTE: These following parameters are heavily customized for the static warm
-    # pool paper. Please use different branch for normal serverless simulation
     "container": {
-        "spawn_time_mean": 6.05,   # Time units to spawn a container
-        "spawn_time_std": 0.46,    # Stddev for spawn time 
-        "idle_cpu_timeout": 0,     # Time units an idle container waits before removal
-        "load_request_time": 0,  # Time units to load a request into a container
-        "load_model_time": 0,    # Time units to load a model into a container
+        "spawn_time_mean": 10,   # Mean cold-start spawn duration (time units)
+        "spawn_time_std": 0.46,    # Std-dev of spawn duration
+        "idle_cpu_timeout": 150,     # Idle eviction timeout (0 = disabled for warm pool)
     },
-    
-    # Topology Parameters
-    "topology": {
-        "use_topology": False,
-    }
 }
-
-# Statistics
-# request_stats = {
-#     'generated': 0,
-#     'processed': 0,
-#     'blocked_no_server_capacity': 0, # Blocked because no server could *ever* fit it
-#     'blocked_spawn_failed': 0,      # Blocked because spawning failed (transient lack of resources)
-#     'blocked_no_path': 0,  # New: rejected due to no routing path with available bandwidth
-#     'container_spawns_initiated': 0,
-#     'container_spawns_failed': 0,
-#     'container_spawns_succeeded': 0,
-#     'containers_reused': 0,
-#     'containers_removed_idle': 0,
-#     'reuse_oom_failures': 0, # Out Of Memory/CPU when trying to activate reused container
-# }
-
-# # New dictionary to track latency metrics (in time units)
-# latency_stats = {
-#     'total_latency': 0.0,
-#     'spawning_time': 0.0,
-#     'processing_time': 0.0,
-#     'waiting_time': 0.0,      # Total waiting time (container wait + assignment)
-#     'container_wait_time': 0.0, # Time waiting for an idle container
-#     'assignment_time': 0.0,   # Time for the assignment process
-#     'count': 0
-# }
-
-# # Global reference to topology configuration (for compatibility)
-# USE_TOPOLOGY = config["topology"]["use_topology"]

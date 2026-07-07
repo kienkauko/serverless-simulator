@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"from sklearn.mixture import GaussianMixture; print\\('ok'\\)\")",
+      "Bash(pip install *)",
+      "Bash(python processing_time_distribution/fit_processing_time.py)",
+      "Bash(where python *)",
+      "Bash(python -c \"import pandas; import scipy; import matplotlib; print\\('all ok'\\)\")",
+      "Bash(\"C:/Users/kienkauko/AppData/Local/Programs/Python/Python37/python.exe\" -c \"import pandas; import scipy; import matplotlib; print\\('all ok'\\)\")",
+      "Read(//c/Users/kienkauko/AppData/Local/Programs/Python/**)",
+      "Bash(conda info *)",
+      "Bash(\"C:/Users/kienkauko/AppData/Local/Programs/Python/Python37/python.exe\" -c \"from sklearn.mixture import GaussianMixture; print\\('sklearn ok'\\)\")",
+      "Bash(\"C:/Users/kienkauko/AppData/Local/Programs/Python/Python37/python.exe\" \"c:/Users/kienkauko/OneDrive - Hanoi University of Science and Technology/Simulators-n-tools/serverless-simulator/processing_time_distribution/fit_processing_time.py\")",
+      "Bash(grep \"False\" \"c:/Users/kienkauko/OneDrive - Hanoi University of Science and Technology/Simulators-n-tools/serverless-simulator/comparison_testbed/request/arrival_1.0/$\\(ls 'c:/Users/kienkauko/OneDrive - Hanoi University of Science and Technology/Simulators-n-tools/serverless-simulator/comparison_testbed/request/arrival_1.0/')"
+    ]
+  }
+}

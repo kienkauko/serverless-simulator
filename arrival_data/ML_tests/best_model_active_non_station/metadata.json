@@ -1,0 +1,50 @@
+{
+  "best_model": "RandomForest",
+  "lookback": 120,
+  "feature_names": [
+    "minute",
+    "arrival",
+    "p99_active"
+  ],
+  "target_name": "p99_active",
+  "csv": "sparse-for-train.csv",
+  "n_samples": 42964,
+  "quantile": 0.7,
+  "metrics": {
+    "RandomForest": {
+      "name": "RandomForest",
+      "mae": 3.5105137067721746,
+      "rmse": 4.601316323333646,
+      "r2": 0.9773370684636287,
+      "mape": 21.84938587071175,
+      "under": 31.08904747130003
+    },
+    "XGBoost": {
+      "name": "XGBoost",
+      "mae": 3.4222517013549805,
+      "rmse": 4.681482547133048,
+      "r2": 0.9765405058860779,
+      "mape": 17.78413963317871,
+      "under": 36.099906919019546
+    },
+    "LightGBM": {
+      "name": "LightGBM",
+      "mae": 3.401250647481762,
+      "rmse": 4.637124631057951,
+      "r2": 0.9769829615627191,
+      "mape": 17.492355978917924,
+      "under": 37.07725721377598
+    },
+    "LSTM": {
+      "name": "LSTM",
+      "mae": 4.267314910888672,
+      "rmse": 5.528672646954477,
+      "r2": 0.9672814607620239,
+      "mape": 24.18275260925293,
+      "under": 20.01241079739373
+    }
+  },
+  "files": [
+    "bundle.joblib"
+  ]
+}

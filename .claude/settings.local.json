@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python comparison_testbed/compare.py)",
+      "Bash(python -c \"import sys; print\\(sys.executable\\)\")",
+      "Bash(pip show:*)",
+      "Bash(python -m pip install numpy)",
+      "Bash(python -m pip install matplotlib scipy networkx)",
+      "Bash(awk -F',' 'NR>1 {print $2}' \"arrival_data/ML_tests/sample.csv\")",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import gym; print\\(gym.__version__\\)\")",
+      "Bash(python -c \"import stable_baselines3; print\\(stable_baselines3.__version__\\)\")",
+      "Bash(python -c \"import simpy, numpy; print\\('simpy', simpy.__version__, 'numpy', numpy.__version__\\)\")",
+      "PowerShell($nb = Get-Content -Raw -Path \"huewei_arrival_traces/read_r2_requests.ipynb\" | ConvertFrom-Json; for \\($i = 0; $i -lt $nb.cells.Count; $i++\\) { $c = $nb.cells[$i]; $first = if \\($c.source -is [array]\\) { $c.source[0] } else { $c.source }; $first = \\($first -split \"`n\"\\)[0]; Write-Output \\(\"{0,2}: {1,-8} {2}\" -f $i, $c.cell_type, $first\\) })",
+      "Bash(xargs -I {} head -2 \"{}\")",
+      "Bash(python -c \"import pandas as pd; df = pd.read_csv\\('c:/Users/kienkauko/OneDrive - Hanoi University of Science and Technology/Simulators-n-tools/serverless-simulator/logs/day_night/2026_05_20_145009_multi_x5_mine.csv'\\); print\\('shape:', df.shape\\); print\\('repetitions:', sorted\\(df['repetition'].unique\\(\\)\\)\\); print\\('minutes per rep:', df.groupby\\('repetition'\\)['minute'].count\\(\\).values\\)\")",
+      "Bash(python -m py_compile dynamic_pool/RL/train.py dynamic_pool/RL/infer.py dynamic_pool/RL/rl_env.py)",
+      "Bash(python -m py_compile dynamic_pool/RL/train.py dynamic_pool/RL/infer.py)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('dynamic_pool/RL/infer.py', encoding='utf-8'\\).read\\(\\)\\); print\\('syntax OK'\\)\")",
+      "Read(//c/Users/kienkauko/AppData/Roaming/Code/User/History/1a9c4553/**)",
+      "Bash(python -c \"import tbparse; print\\(tbparse.__version__\\)\")",
+      "Bash(python -c \"from tensorboard.backend.event_processing.event_accumulator import EventAccumulator; print\\('ok'\\)\")",
+      "Bash(where pip *)",
+      "Bash('C:\\\\Users\\\\kienkauko\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\\\\python.exe' -c ' *)",
+      "Bash(\"C:\\\\Users\\\\kienkauko\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\\\\python.exe\" \"dynamic_pool/RL/plot_train_results/plot_training.py\")",
+      "Bash(MPLBACKEND=Agg \"C:\\\\Users\\\\kienkauko\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\\\\python.exe\" plot_training.py --combine)",
+      "Bash(py -3.13 trace_selection_rationale.py)",
+      "Bash(py -3.13 -c \"import CTMC_vs_simulator_multi_core as m; print\\('imports OK; root on path ->', str\\(m._PROJECT_ROOT\\)\\)\")"
+    ]
+  }
+}

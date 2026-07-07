@@ -12,6 +12,7 @@ import numpy as np
 from scipy import linalg
 from scipy.optimize import brentq
 import math
+from sympy import symbols, Matrix, simplify, factor, cancel, solve, Eq, pprint, latex, factorial
 # from graph import draw_graph_updated
 
 
@@ -34,7 +35,8 @@ class MarkovModel():
         self._cpu_active = config["cpu_demand"]
         self._peak_power = config["peak_power"]
         self._power_scale = config["power_scale"]
-        
+        self._cpu_transit = config["cpu_transit"]
+        self._ram_transit = config["ram_transit"]
         self._G = self.build_graph()
         if self._verbose:
             print("Markov: Computing probabilities...")
@@ -174,9 +176,184 @@ class MarkovModel():
         np.fill_diagonal(Q, -Q.sum(axis=1))
         return Q, n2i
     
+    def compute_symbolic_steady_state(self):
+        """
+        Build the rate matrix symbolically using SymPy and solve the global
+        balance equations  pi @ Q = 0,  sum(pi) = 1  to obtain closed-form
+        expressions for every steady-state probability.
+
+        Returns:
+            dict: mapping  (i, j) state tuple -> simplified SymPy expression
+        """
+        # --- 1. Symbolic parameters ---
+        lam, mu, alpha = symbols('lambda mu alpha', positive=True, real=True)
+
+        # --- 2. Ordered state list (same order used by create_rate_matrix) ---
+        nodes = sorted(list(self._G.nodes))
+        num_states = len(nodes)
+        n2i = {node: idx for idx, node in enumerate(nodes)}
+
+        # --- 3. Build symbolic rate matrix Q ---
+        Q_sym = Matrix.zeros(num_states, num_states)
+
+        for edge in self._G.edges:
+            src, dst = edge
+            i0 = n2i[src]
+            i1 = n2i[dst]
+
+            # Reconstruct the symbolic rate from the transition type
+            si, sj = src
+            di, dj = dst
+
+            if di == si + 1 and dj == sj:
+                # Arrival: rate = lambda
+                rate = lam
+            elif di == si and dj == sj + 1:
+                # Arrival overflows to cold queue: rate = lambda
+                rate = lam
+            elif di == si and dj == sj - 1:
+                # Cold completion: rate = j * alpha
+                rate = sj * alpha
+            elif di == si - 1 and dj == sj:
+                # Warm completion: rate = i * mu
+                rate = si * mu
+            else:
+                # Fallback (should not happen for this model)
+                rate = self._G[src][dst]["weight"]
+
+            Q_sym[i0, i1] = rate
+
+        # Fill diagonal so each row sums to zero
+        for r in range(num_states):
+            Q_sym[r, r] = -sum(Q_sym[r, c] for c in range(num_states) if c != r)
+
+        # --- 4. Symbolic probability variables ---
+        pi_syms = symbols(f'pi0:{num_states}', positive=True, real=True)
+
+        # --- 5. Balance equations:  pi @ Q = 0 ---
+        pi_vec = Matrix([list(pi_syms)])          # 1 x n row vector
+        balance_vec = pi_vec * Q_sym               # 1 x n
+        equations = [Eq(balance_vec[0, col], 0) for col in range(num_states)]
+
+        # Normalization
+        equations.append(Eq(sum(pi_syms), 1))
+
+        # --- 6. Solve ---
+        solution = solve(equations, pi_syms, dict=True)
+
+        if not solution:
+            print("SymPy could not find a symbolic solution.")
+            return {}
+
+        sol = solution[0]  # first (and typically only) solution dict
+
+        # --- 7. Map back to state tuples, simplify, and express compactly ---
+        #
+        # For the birth-death structure of this model, the raw SymPy output
+        # expands everything into large integer coefficients (factorials).
+        # We recognise the closed-form pattern directly:
+        #
+        #   For a pure cold chain (n_w = 0):
+        #       π(0,j) = (λ/α)^j / j!  /  Σ_{k=0}^{n_c} (λ/α)^k / k!
+        #
+        #   For the general 2-D chain the same idea applies per dimension,
+        #   but SymPy's generic solve already gives the exact answer — we
+        #   just need better simplification.
+        #
+        # Strategy: try factor → cancel → simplify, keep the shortest repr.
+
+        def _best_simplify(expr):
+            """Return the most compact form among several simplification strategies."""
+            candidates = [
+                factor(expr),
+                cancel(expr),
+                simplify(expr),
+            ]
+            # Pick the representation with the shortest string length
+            return min(candidates, key=lambda e: len(str(e)))
+
+        result = {}
+        for node in nodes:
+            idx = n2i[node]
+            result[node] = _best_simplify(sol[pi_syms[idx]])
+
+        # --- 7b. Build factorial-based compact form ---
+        # For states reachable purely along one dimension the closed form is
+        #   π(i,j) = ρ_w^i / i! · ρ_c^j / j!  ·  π(0,0)
+        # where ρ_w = λ/μ, ρ_c = λ/α.  Express this alongside the raw result.
+        rho_w = lam / mu
+        rho_c = lam / alpha
+        pi00_sym = result.get((0, 0), None)
+        compact = {}
+        if pi00_sym is not None:
+            for node in nodes:
+                i, j = node
+                compact[node] = (rho_w**i / factorial(i)) * (rho_c**j / factorial(j)) * pi00_sym
+
+        # --- 8. Pretty-print ---
+        print("\n=== Closed-Form Steady-State Probabilities ===")
+        print(f"    Symbols:  λ = arrival rate,  μ = warm service rate,  "
+              f"α = cold completion rate")
+        print(f"    ρ_w = λ/μ,  ρ_c = λ/α")
+        print(f"    State space:  (warm_jobs, cold_jobs)\n")
+
+        for node in nodes:
+            print(f"  π{node} =")
+            pprint(result[node], use_unicode=True)
+            print(f"        LaTeX:  {latex(result[node])}")
+            if node in compact:
+                i, j = node
+                print(f"        Compact:  (ρ_w^{i}/{i}!) · (ρ_c^{j}/{j}!) · π(0,0)")
+            print()
+
+        if pi00_sym is not None:
+            print(f"  Where π(0,0) =")
+            pprint(pi00_sym, use_unicode=True)
+            print(f"        LaTeX:  {latex(pi00_sym)}\n")
+
+        print("================================================\n")
+
+        return result
+
+    def validate_symbolic_vs_numeric(self):
+        """
+        Validate symbolic closed-form probabilities against the numerically
+        computed ones.  Substitutes the actual (λ, μ, α) values into each
+        symbolic expression and prints the results side by side.
+        """
+        symbolic = self.compute_symbolic_steady_state()
+        if not symbolic:
+            print("No symbolic solution to validate.")
+            return
+
+        lam_sym, mu_sym, alpha_sym = symbols('lambda mu alpha',
+                                              positive=True, real=True)
+        subs_dict = {
+            lam_sym:   self._lam,
+            mu_sym:    self._mu,
+            alpha_sym: self._alpha,
+        }
+
+        nodes = sorted(symbolic.keys())
+        print("=== Validation: Symbolic vs Numeric ===")
+        print(f"    λ = {self._lam},  μ = {self._mu},  α = {self._alpha:.6f}\n")
+
+        max_err = 0.0
+        for node in nodes:
+            analytic = float(symbolic[node].subs(subs_dict))
+            numeric  = float(self._state_probabilities[node])
+            err = abs(analytic - numeric)
+            max_err = max(max_err, err)
+            match = "✓" if err < 1e-10 else "✗"
+            print(f"  π{node}:  analytical = {analytic:.6f},  "
+                  f"numeric = {numeric:.6f}  {match}")
+
+        print(f"\n  Max absolute error: {max_err:.2e}")
+        print("========================================\n")
+
     def get_graph(self):
         return self._G
-        
+
     def _get_state_probabilities(self):
         return self._state_probabilities
     
@@ -239,11 +416,11 @@ class MarkovModel():
         if resource == "cpu":
             active = self._cpu_active
             warm = self._cpu_warm
-            transit = 3.22
+            transit = self._cpu_transit
         elif resource == "ram":
             active = self._ram_active
             warm = self._ram_warm
-            transit = warm
+            transit = self._ram_transit
         else:
             raise ValueError("Resource must be either 'cpu' or 'ram'")
         
@@ -480,8 +657,8 @@ class MarkovModel():
         p99 = self._compute_tail_latency(0.99)
         # cpu_usage = self._compute_cpu_usage()
         # ram_usage = self._compute_ram_usage()
-        # cpu_usage_per_request = cpu_usage/total_requests
-        # ram_usage_per_request = ram_usage/total_requests
+        cpu_usage_per_request = cpu_usage/requests_in_system
+        ram_usage_per_request = ram_usage/requests_in_system
 
         return {
             "blocking_ratios": [block_ratio],
@@ -503,8 +680,8 @@ class MarkovModel():
             # "waiting_times": [waiting_time],
             # 'mean_cpu_usage': [cpu_usage],
             # 'mean_ram_usage': [ram_usage],
-            # 'mean_cpu_usage_per_request': [cpu_usage_per_request],
-            # 'mean_ram_usage_per_request': [ram_usage_per_request],
+            'mean_cpu_usage_per_request': [cpu_usage_per_request],
+            'mean_ram_usage_per_request': [ram_usage_per_request],
             # "states": [self._get_state_probabilities()]
             # "stalling_ratios": [self._compute_stalling_ratio()],
             # "average_stalling_durations": [self._compute_average_stalling_duration()],
@@ -743,19 +920,21 @@ def my_draw_networkx_edge_labels(
 
 if __name__=="__main__":
     config = {
-        "lam": 50,
-        "mu": 10,
-        "spawn_rate": 1/6.05,
-        "queue_warm":5, # queue
-        "queue_cold": 5, # queue
+        "lam": 0.5,
+        "mu": 1/2.50,
+        "spawn_rate": 1/12.0, #default: 1/9.85
+        "queue_warm":2, # queue
+        "queue_cold":2, # queue
         "serving_time": "exponential",
-        "spawn_distribution": "exponential",  # "exponential" or "deterministic"
+        "spawn_distribution": "deterministic",  # "exponential" or "deterministic"
         "arrivals": "exponential",
         # "lam_factor": 1,
-        "ram_warm": 2.10,
-        "cpu_warm": 0.48,
-        "ram_demand": 4.28,
-        "cpu_demand": 17.80,
+        "ram_warm": 2.60,
+        "cpu_warm": 0.01,
+        "ram_demand": 2.59,
+        "cpu_demand": 5.0,
+        "cpu_transit": 5.35,
+        "ram_transit": 1.51,
         "peak_power": 150.0,
         "power_scale": 0.2,  # Power scale factor
 
@@ -763,4 +942,21 @@ if __name__=="__main__":
     m = MarkovModel(config, verbose=False)
     G = m._G
     #draw_graph_updated(G, node_size=1000)
-    print(m.get_metrics())
+    metrics = m.get_metrics()
+    print("\n=== Markov Model Metrics ===")
+    print(f"  Blocking ratio:        {metrics['blocking_ratios'][0]:.4f}")
+    print(f"  Requests in system:    {metrics['requests_in_system'][0]:.4f}")
+    print(f"  Mean latency:          {metrics['latency'][0]:.4f} s")
+    print(f"  Latency std dev:       {metrics['std_latency'][0]:.4f} s")
+    print(f"  P50 latency:           {metrics['p50_latency'][0]:.4f} s")
+    print(f"  P95 latency:           {metrics['p95_latency'][0]:.4f} s")
+    print(f"  P99 latency:           {metrics['p99_latency'][0]:.4f} s")
+    print(f"  P(warm served):        {metrics['p_warm'][0]:.4f}")
+    print(f"  P(cold started):       {metrics['p_cold'][0]:.4f}")
+    print(f"  CPU usage:             {metrics['cpu_usage'][0]:.4f} %")
+    print(f"  RAM usage:             {metrics['ram_usage'][0]:.4f} %")
+    print(f"  Power usage:           {metrics['power_usage'][0]:.4f} W")
+    print("==========================\n")
+
+    # Validate symbolic closed-form vs numeric steady-state probabilities
+    m.validate_symbolic_vs_numeric()

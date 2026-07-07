@@ -1,0 +1,2 @@
+timeout,repetition,seed,sim_time,generated,accepted,blocked,blocking_prob,cold_start,cold_start_ratio,reuse_ratio,mean_warm_pool,mean_redundant,p95_active,p99_active,mean_cold_starting,mean_processing,mean_idle,mean_latency,mean_cpu,mean_ram,mean_power
+30,2,44,10020,23147,23147,0,0.0,16,0.0006912342852205469,0.9993087657147794,9.760479041916168,0.0,8.694610778443113,10.293413173652695,0.020821069672330095,4.882917855350007,9.824194867147574,2.1231466981662437,34.92951498921464,38.367591250805866,93.94220776726225

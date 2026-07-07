@@ -8,3 +8,4 @@ traces
 comparison_results
 Helper.py
 CTMC_vs_simulator_traces_result.txt
+arrival_data/
