@@ -27,7 +27,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Allow import from parent directory
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 from Markov.model_2D import MarkovModel
 
 # ============================================================
@@ -39,7 +39,7 @@ SPAWN_DISTRIBUTION = "exponential"  # "exponential" or "deterministic"
 
 CPU_WARM           = 0.01        # % CPU consumed by one idle warm pod
 RAM_WARM           = 2.60        # % RAM consumed by one idle warm pod
-CPU_DEMAND         = 7.0         # % CPU consumed when pod is actively serving
+CPU_DEMAND         = 5.0         # % CPU consumed when pod is actively serving
 RAM_DEMAND         = 2.60        # % RAM consumed when pod is actively serving
 CPU_TRANSIT        = 5.35        # % CPU consumed during cold-start transition
 RAM_TRANSIT        = 1.51        # % RAM consumed during cold-start transition

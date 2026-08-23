@@ -1,0 +1,29 @@
+Resource file : ../data/lifecycle/yolo/resource/2026_07_20_1624_lifecycle_resource.csv
+Timestamps    : ../data/lifecycle/yolo/timestamps/2026_07_20_1624_timedata.csv
+Exclude null  : True
+Total reps    : 200
+
+── null (200 reps) ──
+  CPU   (%):  mean=0.83  std=0.09
+  RAM   (%):  mean=12.29  std=0.13
+  RAM  (MB):  mean=3936.20  std=41.16
+  Duration :  mean=20.01s  std=0.01s
+
+── null_to_warm_cpu (200 reps) ──
+  CPU   (%):  mean=4.70  std=0.22
+  RAM   (%):  mean=1.41  std=0.09
+  RAM  (MB):  mean=452.34  std=29.04
+  Duration :  mean=8.04s  std=0.21s
+
+── warm_cpu (200 reps) ──
+  CPU   (%):  mean=-0.04  std=0.12
+  RAM   (%):  mean=2.47  std=0.19
+  RAM  (MB):  mean=792.68  std=60.32
+  Duration :  mean=20.01s  std=0.01s
+
+── active (200 reps) ──
+  CPU   (%):  mean=5.65  std=1.38
+  RAM   (%):  mean=2.53  std=0.19
+  RAM  (MB):  mean=809.90  std=62.06
+  Duration :  mean=0.43s  std=0.05s
+

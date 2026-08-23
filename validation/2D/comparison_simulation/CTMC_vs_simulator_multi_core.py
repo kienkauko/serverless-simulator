@@ -129,11 +129,11 @@ def generate_test_cases(num_cases=500, seed=42):
         if containers_per_server < 1:
             continue
 
-        num_servers = int(rng.integers(1, 101))
+        num_servers = int(rng.integers(10, 101))
         power_scale = float(rng.uniform(0.2, 0.6))
-        warm_percent = float(rng.uniform(0.1, 1.0))
-        mean_service_time = float(rng.uniform(1.0, 50.0))
-        spawn_time = float(rng.uniform(1.0, 50.0))
+        warm_percent = float(rng.uniform(0, 0.1))
+        mean_service_time = float(rng.uniform(1.0, 30.0))
+        spawn_time = float(rng.uniform(1.0, 30.0))
         service_rate = 1.0 / mean_service_time
 
         total_cap = containers_per_server * num_servers
@@ -176,7 +176,7 @@ def convert_to_markov_config(test_case):
         "queue_warm": queue_warm,
         "queue_cold": queue_cold,
         "serving_time": "exponential",
-        "spawn_distribution": "exponential",
+        "spawn_distribution": "deterministic",
         "arrivals": "exponential",
         "ram_warm": test_case['ram_warm'],
         "cpu_warm": test_case['cpu_warm'],
@@ -216,7 +216,7 @@ def convert_to_simulator_config(test_case):
     sim_config["server"]["peak_power"] = test_case['peak_power']
     sim_config["server"]["power_scale"] = test_case['power_scale']
 
-    sim_config["distribution"]["spawn-distribution"] = "exponential"
+    sim_config["distribution"]["spawn-distribution"] = "deterministic"
     sim_config["distribution"]["arrival-distribution"] = "exponential"
     sim_config["distribution"]["service-distribution"] = "exponential"
 

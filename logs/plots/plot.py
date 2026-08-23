@@ -289,7 +289,7 @@ def _window_ram_per_request(df):
 
 def plot_ram_second_per_request(groups):
     data = collect(groups, _window_ram_per_request, per_run=True)
-    bar_with_ci(data, "Mean RAMsec. per Req.", "RAMsecond per request by strategy (95% CI across repetitions)")
+    bar_with_ci(data, "Mean RAM per Request (%.s)", "RAMsecond per request by strategy (95% CI across repetitions)")
 
 
 def plot_cpu_second_per_request(groups):
@@ -304,7 +304,7 @@ def plot_cpu_second_per_request(groups):
         total_acc = float(window["accepted"].sum())
         return delta_cpu / total_acc if total_acc > 0 else np.nan
     data = collect(groups, per_run, per_run=True)
-    bar_with_ci(data, "Mean CPUsecond per Request", "CPUsecond per request by strategy (95% CI across repetitions)")
+    bar_with_ci(data, "Mean CPU per Request (%.s)", "CPUsecond per request by strategy (95% CI across repetitions)")
 
 
 def plot_energy_per_request(groups):
@@ -319,12 +319,12 @@ def plot_energy_per_request(groups):
         total_acc = float(window["accepted"].sum())
         return delta_energy / total_acc if total_acc > 0 else np.nan
     data = collect(groups, per_run, per_run=True)
-    bar_with_ci(data, "Mean Energy per Req. (J)", "Energy per request by strategy (95% CI across repetitions)")
+    bar_with_ci(data, "Mean Energy per Request (J)", "Energy per request by strategy (95% CI across repetitions)")
 
 
 def plot_latency(groups):
     data = collect(groups, lambda df: df["mean_latency"].to_numpy(dtype=float))
-    bar_with_ci(data, "Mean Processing Time (s)", "Latency by strategy (mean over minutes, 95% CI)",
+    bar_with_ci(data, "Mean processing time (s)", "Latency by strategy (mean over minutes, 95% CI)",
                 decimals=2, nudge_factor=0.1, ylim=(1.0, 3.0))
 
 
@@ -347,7 +347,7 @@ def plot_energy_per_request(groups):
         with np.errstate(divide="ignore", invalid="ignore"):
             return np.where(arr > 0, delta_e / arr, np.nan)
     data = collect(groups, per_min)
-    bar_with_ci(data, "Energy per Request (J)", "Energy per request by strategy (95% CI across minutes)", decimals=1)
+    bar_with_ci(data, "Energy per request (J)", "Energy per request by strategy (95% CI across minutes)", decimals=1)
 
 
 def plot_cold_hit_percentage(groups):
@@ -368,7 +368,7 @@ def plot_cold_hit_percentage(groups):
         total_arr = float(window["accepted"].sum())
         return 100.0 * delta_cold / total_arr if total_arr > 0 else np.nan
     data = collect(groups, per_run, per_run=True)
-    bar_with_ci(data, "Cold-hit Rate (%)",
+    bar_with_ci(data, "Cold-hit rate (%)",
                 "Cold-hit percentage by strategy (95% CI across repetitions)",
                 decimals=2, legend_loc="center right")
 

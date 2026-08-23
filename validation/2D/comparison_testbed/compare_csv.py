@@ -24,7 +24,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Allow import from parent directory
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 from Markov.model_2D import MarkovModel
 
 # ============================================================
@@ -36,7 +36,7 @@ SPAWN_DISTRIBUTION = "exponential"
 
 CPU_WARM           = 0.01
 RAM_WARM           = 2.60
-CPU_DEMAND         = 7.03
+CPU_DEMAND         = 5.00 # previosu: 7.03
 RAM_DEMAND         = 2.62
 CPU_TRANSIT        = 5.35
 RAM_TRANSIT        = 1.51
@@ -81,8 +81,8 @@ def discover_scenarios(base_dir):
         candidates = {str(rate), str(rate).rstrip("0").rstrip(".")}
         req_dir = res_dir = None
         for label in candidates:
-            rd = os.path.join(base_dir, "request", f"arrival_{label}")
-            sd = os.path.join(base_dir, "resource", f"arrival_{label}")
+            rd = os.path.join(base_dir, "data","request", f"arrival_{label}")
+            sd = os.path.join(base_dir, "data","resource", f"arrival_{label}")
             if os.path.isdir(rd) and os.path.isdir(sd):
                 req_dir, res_dir = rd, sd
                 break

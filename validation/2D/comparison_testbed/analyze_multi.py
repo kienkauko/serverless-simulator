@@ -146,6 +146,10 @@ def analyze_rep(req_path, res_path, lower_cutoff=LOWER_CUTOFF, upper_cutoff=UPPE
 
     response_times = [r["response_time_s"] for r in successful_window]
     processing_times = [r["processing_time_s"] for r in successful_window]
+    cold_start_times = [
+        r["response_time_s"] - r["processing_time_s"]
+        for r in successful_window if not r["warm"]
+    ]
 
     res_window = [r for r in resource if t_start <= r["time"] <= t_end]
 
@@ -178,6 +182,7 @@ def analyze_rep(req_path, res_path, lower_cutoff=LOWER_CUTOFF, upper_cutoff=UPPE
         "blocking_rate": blocking_rate,
         "response_times": response_times,
         "processing_times": processing_times,
+        "cold_start_times": cold_start_times,
         "avg_serving": avg_serving,
         "avg_cpu": avg_cpu,
         "avg_ram_pct": avg_ram_pct,
@@ -234,6 +239,7 @@ def analyze_arrival(arrival_rate, lower_cutoff=LOWER_CUTOFF, upper_cutoff=UPPER_
         blocking_rates = [r["blocking_rate"] for r in rep_results]
         all_response_times = [t for r in rep_results for t in r["response_times"]]
         all_processing_times = [t for r in rep_results for t in r["processing_times"]]
+        all_cold_start_times = [t for r in rep_results for t in r["cold_start_times"]]
         avg_servings = [r["avg_serving"] for r in rep_results]
         cpu_per_reqs = [r["cpu_per_req"] for r in rep_results]
         ram_pct_per_reqs = [r["ram_pct_per_req"] for r in rep_results]
@@ -251,6 +257,10 @@ def analyze_arrival(arrival_rate, lower_cutoff=LOWER_CUTOFF, upper_cutoff=UPPER_
             output_lines.append(f"  Processing time(s):  mean={np.mean(all_processing_times):.4f}  p99={np.percentile(all_processing_times, 99):.4f}  var={np.var(all_processing_times):.4f}")
         else:
             output_lines.append(f"  Processing time(s):  no successful requests in window")
+        if all_cold_start_times:
+            output_lines.append(f"  Cold-start time(s):  mean={np.mean(all_cold_start_times):.4f}  p99={np.percentile(all_cold_start_times, 99):.4f}  var={np.var(all_cold_start_times):.4f}")
+        else:
+            output_lines.append(f"  Cold-start time(s):  na")
         output_lines.append(f"  Serving requests  :  mean={np.mean(avg_servings):.2f}  std={np.std(avg_servings):.2f}")
         output_lines.append(f"  CPU/req        (%):  mean={np.mean(cpu_per_reqs):.4f}  std={np.std(cpu_per_reqs):.4f}")
         output_lines.append(f"  RAM/req        (%):  mean={np.mean(ram_pct_per_reqs):.4f}  std={np.std(ram_pct_per_reqs):.4f}")

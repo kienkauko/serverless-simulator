@@ -260,22 +260,22 @@ LOAD_LABEL = {
 MARKERS = ["o", "s", "^", "D", "v", "p", "*", "h"]
 
 METRICS = [
-    ("blocking_rate", "Blocking Ratio (%)",
+    ("blocking_rate", "Blocking ratio (%)",
      lambda r: r["blocking_rate"], 100.0),
-    ("response_time", "Mean Processing Time (s)",
+    ("response_time", "Mean processing time (s)",
      lambda r: float(np.mean(r["response_times"])) if r["response_times"] else float("nan"), 1.0),
-    ("cpu", "Mean CPUsecond per Request",
+    ("cpu", "Mean CPU per Request (%.s)",
      lambda r: r["cpu_time_per_success"], 1.0),
-    ("ram_pct", "Mean RAMsecond per Request",
+    ("ram_pct", "Mean RAM per Request (%.s)",
      lambda r: r["ram_time_per_success"], 1.0),
 ]
 
 POOLED_METRICS = [
-    ("response_p50", "Response Time p50 (s)",
+    ("response_p50", "Processing time p50 (s)",
      "response_times", lambda x: float(np.percentile(x, 50)), 1.0),
-    ("response_p95", "Response Time p95 (s)",
+    ("response_p95", "Processing time p95 (s)",
      "response_times", lambda x: float(np.percentile(x, 95)), 1.0),
-    ("response_p99", "Response Time p99 (s)",
+    ("response_p99", "Processing time p99 (s)",
      "response_times", lambda x: float(np.percentile(x, 99)), 1.0),
 ]
 
@@ -673,9 +673,35 @@ def aggregate(idle_results, value_fn):
 
 # ── Plotting ──
 
+# Metric key -> log base for the y axis.
+_LOG_YSCALE_BASE = {"blocking_rate": 10, "response_time": 2}
+
+# Metric key -> log base for the x axis. The loads only differ at short idle
+# timeouts, so expand that region. symlog (not log) because idle=0 is a real
+# data point: below `linthresh` the axis stays linear so it can be drawn.
+_LOG_XSCALE_BASE = {"response_time": 2}
+_XSCALE_LINTHRESH = 1.0
+
+# Smallest blocking ratio the experiment can resolve, in percent. Each idle
+# timeout pools 10 reps of ~300 requests, so a single failure is ~0.033%;
+# anything plotted below this is an artifact, not a measurement. The normal
+# CI lower bound goes negative at most points (few failures, high variance),
+# which a log axis cannot draw, so the band is clamped here instead.
+BLOCKING_FLOOR_PCT = 1e-2
+
+
 def _finalize_and_save(fig, ax, key, ylabel):
     ax.set_xlabel("Idle timeout (s)", fontsize=LABEL_SIZE)
     ax.set_ylabel(ylabel, fontsize=LABEL_SIZE)
+    if key in _LOG_YSCALE_BASE:
+        ax.set_yscale("log", base=_LOG_YSCALE_BASE[key])
+    if key in _LOG_XSCALE_BASE:
+        ax.set_xscale("symlog", base=_LOG_XSCALE_BASE[key],
+                      linthresh=_XSCALE_LINTHRESH)
+        # symlog is symmetric about 0 and would otherwise show a negative branch.
+        ax.set_xlim(left=0)
+    if key == "blocking_rate":
+        ax.set_ylim(bottom=BLOCKING_FLOOR_PCT)
     ax.tick_params(axis="both", labelsize=TICK_SIZE)
     ax.grid(True, alpha=0.3)
     ax.legend(
@@ -703,17 +729,24 @@ def _print_points(key, load_pct, idles, means):
 
 # ── Generic plot builders (shared by the per-plot functions below) ──
 
-def _marker_indices(idles, period=MARKER_PERIOD):
+def _marker_indices(idles, period=MARKER_PERIOD, key=None):
     """Indices of points to mark, spaced >= `period` x-units apart.
 
     Returns a list suitable for matplotlib's ``markevery``. The first point is
     always marked; each subsequent point is marked only once the x-value has
     advanced at least `period` from the previous marked point. A non-positive
     period marks every point.
+
+    On a symlog x axis, spacing is measured in the transformed coordinate so
+    markers stay visually even instead of bunching up in the compressed tail.
     """
     idles = np.asarray(idles, dtype=float)
     if len(idles) == 0:
         return []
+    if key in _LOG_XSCALE_BASE:
+        # asinh is the smooth analogue of symlog: linear near 0, log beyond.
+        idles = np.arcsinh(idles / _XSCALE_LINTHRESH)
+        period = (idles.max() - idles.min()) / 8 if len(idles) > 1 else 0
     if period is None or period <= 0:
         return list(range(len(idles)))
     indices = [0]
@@ -755,14 +788,37 @@ def _plot_metric(series, key, ylabel, value_fn, scale, apply_ram=False,
 
         _print_points(key, load_pct, idles, means)
 
+        plotted = means
+        zeros = None
+        if key == "blocking_rate":
+            lo = np.maximum(lo, BLOCKING_FLOOR_PCT)
+            hi = np.maximum(hi, BLOCKING_FLOOR_PCT)
+            # A zero mean has no place on a log axis: matplotlib draws it as a
+            # stroke running off the bottom of the frame rather than a gap.
+            # Break the line there and mark the point on the floor instead.
+            zeros = means <= 0
+            plotted = np.where(zeros, np.nan, means)
+
         line, = ax.plot(
-            idles, means,
+            idles, plotted,
             marker=marker,
             markersize=MARKER_SIZE,
-            markevery=_marker_indices(idles),
+            markevery=_marker_indices(idles, key=key),
             linewidth=LINE_WIDTH,
             label=load_pct,
         )
+        if zeros is not None and zeros.any():
+            ax.plot(
+                idles[zeros], np.full(zeros.sum(), BLOCKING_FLOOR_PCT),
+                linestyle="none",
+                color=line.get_color(),   # keep the cycler from advancing
+                marker=marker,
+                markersize=MARKER_SIZE,
+                markerfacecolor="none",
+                markeredgecolor=line.get_color(),
+                markeredgewidth=1.5,
+                clip_on=False,
+            )
         ax.fill_between(idles, lo, hi, alpha=CI_ALPHA, color=line.get_color())
 
     _finalize_and_save(fig, ax, key, ylabel)
@@ -807,45 +863,45 @@ def _plot_pooled(series, key, ylabel, field, reducer, scale=1.0,
 
 def blocking_ratio(series):
     _plot_metric(
-        series, "blocking_rate", "Blocking Ratio (%)",
+        series, "blocking_rate", "Blocking ratio (%)",
         lambda r: r["blocking_rate"], 100.0, apply_blocking=True,
     )
 
 
 def mean_processing_time(series):
     _plot_metric(
-        series, "response_time", "Mean Processing Time (s)",
+        series, "response_time", "Mean processing time (s)",
         lambda r: float(np.mean(r["response_times"])) if r["response_times"] else float("nan"), 1.0,
     )
 
 
 def cpu(series):
     _plot_metric(
-        series, "cpu", "Mean CPUsecond per Request",
+        series, "cpu", "Mean CPU per request (%.s)",
         lambda r: r["cpu_time_per_success"], 1.0,
     )
 
 
 def ram(series):
     _plot_metric(
-        series, "ram_pct", "Mean RAMsecond per Request",
+        series, "ram_pct", "Mean RAM per request (%.s)",
         lambda r: r["ram_time_per_success"], 1.0, apply_ram=True,
     )
 
 
 def response_p50(series):
-    _plot_pooled(series, "response_p50", "Response Time p50 (s)",
+    _plot_pooled(series, "response_p50", "Processing time p50 (s)",
                  "response_times", lambda x: float(np.percentile(x, 50)))
 
 
 def response_p95(series):
-    _plot_pooled(series, "response_p95", "Response Time p95 (s)",
+    _plot_pooled(series, "response_p95", "Processing time p95 (s)",
                  "response_times", lambda x: float(np.percentile(x, 95)),
                  apply_p95=True)
 
 
 def response_p99(series):
-    _plot_pooled(series, "response_p99", "Response Time p99 (s)",
+    _plot_pooled(series, "response_p99", "Processing time p99 (s)",
                  "response_times", lambda x: float(np.percentile(x, 99)),
                  apply_p99=True)
 
